@@ -2,6 +2,10 @@
 
 HwYtVidGrabber is a desktop application that allows you to download videos and audio from YouTube. It supports various resolutions and formats, including MP4, MP3, and muted MP4.
 
+## Screenshot:
+
+[lol.png](screenshots/lol.png)
+
 ##   Features
 
 * Download videos in resolutions up to 2160p.

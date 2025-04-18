@@ -4,7 +4,7 @@ HwYtVidGrabber is a desktop application that allows you to download videos and a
 
 ## Screenshot:
 
-[lol.png](screenshots/lol.png)
+![lol.png](screenshots/lol.png)
 
 ##   Features
 

@@ -1,4 +1,4 @@
-#   HwYtVidGrabber v1.1
+#   HwYtVidGrabber
 
 HwYtVidGrabber is a desktop application that allows you to download videos and audio from YouTube. It supports various resolutions and formats, including MP4, MP3, and muted MP4.
 
@@ -27,7 +27,7 @@ HwYtVidGrabber is a desktop application that allows you to download videos and a
 No installation is necessary.
 
 * On Windows, simply run the executable (.exe) file.
-* For other operating systems, run the library directly. (python and the other dependcies are inside the app
+* For other operating systems, run the library directly. (python and the other dependcies are inside the app)(rename the file to `HwYtVidGrabber` ans run it with `./HwYtVidGrabber`. installation script, soon)
 
 ##   Usage
 

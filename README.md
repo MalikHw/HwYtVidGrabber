@@ -1,61 +1,96 @@
-#   HwYtVidGrabber
-
-HwYtVidGrabber is a desktop application that allows you to download videos and audio from YouTube. It supports various resolutions and formats, including MP4, MP3, and muted MP4.
-
-## Screenshot:
+# HwYtVidGrabber
 
 ![lol.png](screenshots/lol.png)
 
-##   Features
+A simple, efficient YouTube video and audio downloader with an intuitive GUI built with PyQt6.
 
-* Download videos in resolutions up to 2160p.
-* Download audio in MP3 format.
-* Download muted videos (MP4 format).
-* Option to prefer 60fps for high-definition video downloads.
-* Save settings for video and audio download paths.
-* System tray integration for background operation.
-* Download progress tracking.
-* Notifications for download completion.
+## Features
 
-##   Prerequisites
+- Download YouTube videos in various resolutions (144p to 4K)
+- Extract audio as MP3
+- Option for 60fps videos when available
+- Download videos without audio (muted mp4)
+- Pause, resume, and cancel downloads
+- Dark mode support
+- Progress tracking with speed, file size, and ETA indicators
+- Auto-detection of maximum available resolution
+- Customizable download location
 
-* **FFmpeg**: FFmpeg is required to process and convert audio and video files. The application will display an error message with installation instructions if FFmpeg is not found. (linux only)
-* install with `sudo apt install ffmpeg` (debian) or `sudo dnf install ffmpeg` (fedora) or `sudo pacman -S ffmpeg` (arch)
+## Requirements (only for building)
 
-##   Installation
+- Python 3.8+
+- FFmpeg (automatically detected, with installation guidance)
+- PyQt6
+- yt-dlp
 
-No installation is necessary.
+## Installation
 
-* On Windows, simply run the executable (.exe) file.
-* For other operating systems, run the library directly. (python and the other dependcies are inside the app)(rename the file to `HwYtVidGrabber` ans run it with `./HwYtVidGrabber`. installation script, soon)
 
-##   Usage
+### Windows
 
-1.  Enter the YouTube URL in the provided field.
-2.  Select the desired resolution.
-3.  Choose the output format (MP4, MP3, or muted MP4).
-4.  Check the "Prefer 60fps" option if desired (only available for video formats and 720p or higher resolution).
-5.  Click the "Download" button.
-6.  The download progress will be displayed in the progress bar and status label.
-7.  Downloaded files are saved to the "Downloads/Vids" or "Downloads/Songs" directory by default, or to a user-defined location via the settings.
+```batch
+git clone https://github.com/MalikHw/HwYtVidGrabber.git
+cd HwYtVidGrabber
+```
+download `HwYtVidGrabber.exe` from [releases](https://github.com/MalikHw/HwYtVidGrabber/releases/) and copy it to the newly made folder, after that
+```batch
+install.bat
+```
 
-##   Settings
+### Linux
 
-* The "Settings" button allows you to configure the default save paths for videos and audio.
+```bash
+git clone https://github.com/MalikHw/HwYtVidGrabber.git
+cd HwYtVidGrabber
+```
+download `HwYtVidGrabber` from [releases](https://github.com/MalikHw/HwYtVidGrabber/releases/) and copy it to the newly made folder, after that
+```bash
+./install.sh
+```
 
-##   System Tray
+## Build from Source
 
-* The application can be minimized to the system tray.
-* To close the application completely, use the "Quit" option in the system tray menu.
+To build a standalone executable:
 
-##   Support
+### Linux
+```bash
+chmod +x build.sh
+./build.sh
+```
+
+### Windows
+```bash
+build.bat
+```
+
+The executable will be created in the `dist` directory, with FFmpeg included.
+
+## Usage
+
+1. Launch the application
+2. Enter a YouTube URL in the input field
+3. Select your preferred format (mp4, mp3, or muted mp4)
+4. Choose the desired resolution
+5. Toggle 60fps option if needed
+6. Click the "Download" button
+7. Monitor download progress and use the pause/cancel buttons as needed
+
+## Settings
+
+- **Save Path**: Choose where downloaded files are saved
+- **Dark Mode**: Toggle between light and dark themes
+
+
+## Support
 
 If you find this application useful, consider supporting the developer:
 
-* Click the "Support Development ☕" button to open the donation page.
+[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/MalikHw47)
 
-##   Credits
+## License
 
-* Developed by MalikHw47.
-* Uses the yt-dlp library for downloading.
-* Built with PyQt6.
+MIT License
+
+## Disclaimer
+
+This tool is designed for personal use only. Always respect copyright laws and YouTube's Terms of Service. Download only content that you have permission to download.

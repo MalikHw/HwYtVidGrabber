@@ -2,7 +2,7 @@
 
 ![lol.png](screenshots/lol.png)
 
-A simple, efficient YouTube video and audio downloader with an intuitive GUI built with PyQt6.
+A simple, efficient YouTube video and audio downloader without pissing you off
 
 ## Features
 

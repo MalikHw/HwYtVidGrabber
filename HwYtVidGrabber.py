@@ -1,1099 +1,666 @@
 import sys
 import os
-import re
+import webbrowser
 import json
-import yt_dlp
-import time
 import subprocess
 import platform
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QLabel, QLineEdit,
-                            QPushButton, QComboBox, QVBoxLayout, QHBoxLayout,
-                            QWidget, QProgressBar, QMessageBox, QFileDialog,
-                            QDialog, QFormLayout, QCheckBox, QSystemTrayIcon, QMenu,
-                            QTabWidget, QSizePolicy, QScrollArea, QFrame)
-from PyQt6.QtCore import (Qt, QThread, pyqtSignal, QTimer, QSettings, QEvent,
-                          QPropertyAnimation, QRect)
-from PyQt6.QtGui import QIcon, QFont, QAction, QColor, QPalette, QPixmap
-from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
-from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest
-from PyQt6.QtCore import QUrl
-import eyed3
-import screeninfo
-import math
-import io
-import pytube
-import logging
+from PyQt6.QtWidgets import *
+from PyQt6.QtGui import *
+from PyQt6.QtCore import *
+from yt_dlp import YoutubeDL
 
-logging.basicConfig(level=logging.DEBUG, 
-                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                   filename='yt_downloader_debug.log')
-
-def resource_path(relative_path):
-    if getattr(sys, 'frozen', False):
-        # When bundled with PyInstaller
-        return os.path.join(sys._MEIPASS, relative_path)
-    else:
-        # When running from source
-        return os.path.join(os.path.abspath("."), relative_path)
-
-
-
-# Ensure ffmpeg is installed
-def check_ffmpeg():
-    try:
-        subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
-        return True
-    except FileNotFoundError:
-        return False
-
-if not check_ffmpeg():
-    QMessageBox.critical(None, "FFmpeg Not Found", "FFmpeg is not installed. Please install it to use this application.")
-    sys.exit(1)
-
-def get_default_paths():
-    """Get default paths based on operating system"""
-    user_home = os.path.expanduser("~")
-
-    if sys.platform == 'win32':
-        # Windows paths
-        video_path = os.path.join(user_home, "Downloads", "Vids")
-        audio_path = os.path.join(user_home, "Downloads", "Songs")
-    elif sys.platform == 'darwin':
-        # macOS paths
-        video_path = os.path.join(user_home, "Downloads", "Vids")
-        audio_path = os.path.join(user_home, "Downloads", "Songs")
-    else:
-        # Linux paths
-        video_path = os.path.join(user_home, "Downloads", "Vids")
-        audio_path = os.path.join(user_home, "Downloads", "Songs")
-
-    # Create directories if they don't exist
-    os.makedirs(video_path, exist_ok=True)
-    os.makedirs(audio_path, exist_ok=True)
-
-    return video_path, audio_path
-
-class SettingsDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.parent = parent
-        self.initUI()
-        self.load_settings()
-
-    def initUI(self):
-        self.setWindowTitle("Settings")
-        self.setGeometry(200, 200, 400, 200)
-        self.setWindowIcon(QIcon(resource_path("resources/icon.ico")))
-
-        layout = QFormLayout()
-
-        # Video save path
-        self.video_path_input = QLineEdit()
-        browse_video_btn = QPushButton("Browse...")
-        browse_video_btn.clicked.connect(self.browse_video_path)
-
-        video_path_layout = QHBoxLayout()
-        video_path_layout.addWidget(self.video_path_input)
-        video_path_layout.addWidget(browse_video_btn)
-
-        # Audio save path
-        self.audio_path_input = QLineEdit()
-        browse_audio_btn = QPushButton("Browse...")
-        browse_audio_btn.clicked.connect(self.browse_audio_path)
-
-        audio_path_layout = QHBoxLayout()
-        audio_path_layout.addWidget(self.audio_path_input)
-        audio_path_layout.addWidget(browse_audio_btn)
-
-        layout.addRow("Video Save Path:", video_path_layout)
-        layout.addRow("Audio Save Path:", audio_path_layout)
-
-        # Theme selection
-        self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["Light", "Dark"])
-        layout.addRow("Theme:", self.theme_combo)
-
-        # Post-download action
-        self.post_action_combo = QComboBox()
-        self.post_action_combo.addItems(["Nothing", "Sleep PC", "Terminate App", "Restart PC", "Shutdown PC"])
-        layout.addRow("After Download:", self.post_action_combo)
-
-        # Save button
-        save_btn = QPushButton("Save Settings")
-        save_btn.clicked.connect(self.save_settings)
-        layout.addRow("", save_btn)
-
-        self.setLayout(layout)
-
-    def load_settings(self):
-        self.video_path_input.setText(self.parent.settings.value("video_save_path", self.parent.default_video_path))
-        self.audio_path_input.setText(self.parent.settings.value("audio_save_path", self.parent.default_audio_path))
-        self.theme_combo.setCurrentText(self.parent.settings.value("theme", "Light"))
-        self.post_action_combo.setCurrentText(self.parent.settings.value("post_download_action", "Nothing"))
-
-    def browse_video_path(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Directory for Videos")
-        if folder:
-            self.video_path_input.setText(folder)
-
-    def browse_audio_path(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Directory for Audio")
-        if folder:
-            self.audio_path_input.setText(folder)
-
-    def save_settings(self):
-        self.parent.settings.setValue("video_save_path", self.video_path_input.text())
-        self.parent.settings.setValue("audio_save_path", self.audio_path_input.text())
-        self.parent.settings.setValue("theme", self.theme_combo.currentText())
-        self.parent.settings.setValue("post_download_action", self.post_action_combo.currentText())
-        self.parent.load_settings() # Reload settings in main window
-        self.accept()
-
-class DownloadProgressHook:
-    def __init__(self, progress_callback, info_callback, metadata_callback):
-        self.progress_callback = progress_callback
-        self.info_callback = info_callback
-        self.metadata_callback = metadata_callback
-        self.start_time = time.time()
-        self.last_downloaded_bytes = 0
-        self.last_update_time = self.start_time
-        self.total_bytes = None
-        self.filename = None
-        self.metadata = None
-
-    def __call__(self, d):
-        if d['status'] == 'downloading':
-            current_time = time.time()
-            elapsed = current_time - self.last_update_time
-
-            if elapsed < 0.5 and d.get('eta') is not None: # Update more frequently if eta is available
-                return
-
-            self.last_update_time = current_time
-
-            downloaded = d.get('downloaded_bytes', 0)
-            self.total_bytes = d.get('total_bytes', d.get('total_bytes_estimate', 0))
-            speed = d.get('speed', 0)
-
-            if self.total_bytes > 0:
-                percentage = int((downloaded / self.total_bytes) * 100)
-                self.progress_callback.emit(percentage)
-
-                downloaded_str = self.format_size(downloaded)
-                total_str = self.format_size(self.total_bytes)
-
-                if speed:
-                    speed_str = self.format_size(speed) + "/s"
-                else:
-                    elapsed_total = current_time - self.start_time
-                    if elapsed_total > 0:
-                        speed = downloaded / elapsed_total
-                        speed_str = self.format_size(speed) + "/s"
-                    else:
-                        speed_str = "N/A"
-
-                eta = d.get('eta')
-                eta_str = f"ETA: {self.format_eta(eta)}" if eta is not None else ""
-
-                self.info_callback.emit(f"{downloaded_str} of {total_str} ({speed_str}) {eta_str}")
-            else:
-                self.progress_callback.emit(-1) # Indeterminate progress
-
-                downloaded_str = self.format_size(downloaded)
-
-                if speed:
-                    speed_str = self.format_size(speed) + "/s"
-                else:
-                    elapsed = current_time - self.last_update_time
-                    if elapsed > 0 and downloaded > self.last_downloaded_bytes:
-                         current_speed = (downloaded - self.last_downloaded_bytes) / elapsed
-                         speed_str = self.format_size(current_speed) + "/s"
-                    else:
-                         speed_str = "N/A"
-
-                self.info_callback.emit(f"{downloaded_str} downloaded ({speed_str})")
-
-            self.last_downloaded_bytes = downloaded
-
-        elif d['status'] == 'finished':
-            self.progress_callback.emit(100)
-            self.info_callback.emit("Processing completed file...")
-            self.filename = d.get('filename') # Capture the final filename
-            if self.metadata:
-                 self.metadata_callback.emit(self.metadata, self.filename) # Pass metadata and filename
-
-    def format_size(self, bytes):
-        """Format bytes to human-readable size"""
-        if bytes is None:
-            return "N/A"
-        if bytes < 1024:
-            return f"{bytes} B"
-        elif bytes < 1024 * 1024:
-            return f"{bytes/1024:.1f} KB"
-        elif bytes < 1024 * 1024 * 1024:
-            return f"{bytes/(1024*1024):.1f} MB"
-        else:
-            return f"{bytes/(1024*1024*1024):.2f} GB"
-
-    def format_eta(self, seconds):
-        """Format eta from seconds to HH:MM:SS"""
-        if seconds is None:
-            return "N/A"
-        m, s = divmod(seconds, 60)
-        h, m = divmod(m, 60)
-        return f"{int(h):02d}:{int(m):02d}:{int(s):02d}"
-
-class MetadataFetchThread(QThread):
-    metadata_fetched = pyqtSignal(dict)
-    error_occurred = pyqtSignal(str)
-
-    def __init__(self, url):
+class DownloadWorker(QThread):
+    progress_signal = pyqtSignal(dict)
+    finished_signal = pyqtSignal()
+    error_signal = pyqtSignal(str)
+    info_signal = pyqtSignal(dict)
+    available_formats_signal = pyqtSignal(dict)
+    
+    def __init__(self, url, save_path, format_option, resolution, fps_60=False):
         super().__init__()
         self.url = url
-
-    def run(self):
-        try:
-            ydl_opts = {
-                'quiet': True,
-                'no_warnings': True,
-                'skip_download': True,
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info_dict = ydl.extract_info(self.url, download=False)
-                self.metadata_fetched.emit(info_dict)
-        except Exception as e:
-            self.error_occurred.emit(f"Error fetching metadata: {str(e)}")
-
-class DownloadThread(QThread):
-    progress_update = pyqtSignal(int)
-    download_info = pyqtSignal(str)
-    download_complete = pyqtSignal(str)
-    download_error = pyqtSignal(str)
-    metadata_download_finished = pyqtSignal(dict, str) # Signal to pass metadata and filename after download
-
-    def __init__(self, url, format_options, save_path, ydl_extra_opts=None):
-        super().__init__()
-        self.url = url
-        self.format_options = format_options
         self.save_path = save_path
-        self.ydl_extra_opts = ydl_extra_opts if ydl_extra_opts is not None else {}
-
+        self.format_option = format_option
+        self.resolution = resolution
+        self.fps_60 = fps_60
+        self.is_paused = False
+        self.is_cancelled = False
+        self.is_rickroll = "xvFZjo5PgG0" in url
+        
     def run(self):
         try:
-            self.progress_update.emit(5)
-            self.download_info.emit("Initializing download...")
-
-            os.makedirs(self.save_path, exist_ok=True)
-
+            # First fetch video info
+            with YoutubeDL({'quiet': True}) as ydl:
+                info = ydl.extract_info(self.url, download=False)
+                
+                # Check if this is a rickroll
+                if self.is_rickroll:
+                    # Hide the real title and channel
+                    video_info = {
+                        'title': '????',
+                        'uploader': '????'
+                    }
+                else:
+                    # Use the real title and channel
+                    video_info = {
+                        'title': info.get('title', 'Unknown'),
+                        'uploader': info.get('uploader', 'Unknown')
+                    }
+                
+                self.info_signal.emit(video_info)
+                
+                # Get available formats
+                formats = info.get('formats', [])
+                max_height = 0
+                for f in formats:
+                    if f.get('height') and f.get('height') > max_height:
+                        max_height = f.get('height')
+                
+                # Map height to resolution name
+                res_name = "144p"
+                if max_height >= 2160:
+                    res_name = "4K"
+                elif max_height >= 1440:
+                    res_name = "2K"  
+                elif max_height >= 1080:
+                    res_name = "FHD"
+                elif max_height >= 720:
+                    res_name = "HD"
+                elif max_height >= 480:
+                    res_name = "480p"
+                elif max_height >= 360:
+                    res_name = "360p"
+                
+                self.available_formats_signal.emit({
+                    'max_resolution': res_name,
+                    'max_height': max_height
+                })
+            
+            # Make format string based on options
+            if self.format_option == "mp3":
+                format_str = "bestaudio/best"
+                postprocessors = [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }]
+            else:
+                # Video resolution mapping - Fixed with proper format selectors
+                res_map = {
+                    "144p": "best[height<=144]",
+                    "360p": "best[height<=360]",
+                    "480p": "best[height<=480]",
+                    "HD": "best[height<=720]",
+                    "FHD": "best[height<=1080]",
+                    "2K": "best[height<=1440]",
+                    "4K": "best[height<=2160]",
+                    "Max": "best"  # Best available quality
+                }
+                
+                base_format = res_map.get(self.resolution, "best")
+                if self.fps_60:
+                    format_str = f"{base_format}[fps>=60]/best[fps>=60]/best"
+                else:
+                    format_str = base_format
+                
+                if self.format_option == "mp4":
+                    format_str = f"bestvideo[ext=mp4]{res_map.get(self.resolution, '')[4:]}+bestaudio/bestvideo+bestaudio/best"
+                    postprocessors = [{
+                        'key': 'FFmpegVideoConvertor',
+                        'preferedformat': 'mp4',
+                    }]
+                else:  # muted mp4
+                    format_str = f"bestvideo[ext=mp4]{res_map.get(self.resolution, '')[4:]}/best"
+                    postprocessors = [{
+                        'key': 'FFmpegVideoConvertor',
+                        'preferedformat': 'mp4',
+                    }]
+            
+            # Progress hook
+            def my_hook(d):
+                if self.is_cancelled:
+                    raise Exception("Download cancelled")
+                
+                if d['status'] == 'downloading':
+                    # Extract percentage - Fix for the float conversion error
+                    p_str = d.get('_percent_str', '0%').strip()
+                    try:
+                        p = float(p_str.replace('%', '')) if '%' in p_str else 0
+                    except ValueError:
+                        # Handle malformed percentage strings
+                        p = 0
+                    
+                    # Extract speed
+                    s = d.get('_speed_str', '0KiB/s').strip()
+                    
+                    # Extract total size
+                    ts = d.get('_total_bytes_str', 'N/A')
+                    
+                    # Extract ETA
+                    eta = d.get('_eta_str', 'N/A')
+                    
+                    self.progress_signal.emit({
+                        'percent': p, 
+                        'speed': s,
+                        'total_size': ts,
+                        'eta': eta
+                    })
+                    
+                    # Handle pause
+                    while self.is_paused:
+                        QThread.sleep(1)
+                        if self.is_cancelled:
+                            raise Exception("Download cancelled")
+            
+            # Set custom filename for rickroll
+            if self.is_rickroll:
+                output_template = os.path.join(self.save_path, '????.%(ext)s')
+            else:
+                output_template = os.path.join(self.save_path, '%(uploader)s - %(title)s.%(ext)s')
+            
             ydl_opts = {
-                'progress_hooks': [DownloadProgressHook(self.progress_update, self.download_info, self.metadata_download_finished)],
-                'quiet': True,
-                'no_warnings': True,
-                'outtmpl': os.path.join(self.save_path, '%(uploader)s - %(title)s.%(ext)s'),
-                **self.format_options,
-                **self.ydl_extra_opts
+                'format': format_str,
+                'postprocessors': postprocessors,
+                'outtmpl': output_template,
+                'progress_hooks': [my_hook],
+                'quiet': False,
+                'no_warnings': False
             }
-
-            # Fetch metadata before downloading for the hook
-            metadata_ydl_opts = {
-                 'quiet': True,
-                 'no_warnings': True,
-                 'skip_download': True,
-             }
-            with yt_dlp.YoutubeDL(metadata_ydl_opts) as ydl_meta:
-                 info_dict = ydl_meta.extract_info(self.url, download=False)
-                 # Pass metadata to the hook
-                 for hook in ydl_opts['progress_hooks']:
-                      hook.metadata = info_dict
-
-            self.progress_update.emit(10)
-            self.download_info.emit("Starting download...")
-
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(self.url, download=True)
-                output_path = ydl.prepare_filename(info) # Get the actual output filename
-
-            self.download_complete.emit(output_path)
-
+            
+            with YoutubeDL(ydl_opts) as ydl:
+                ydl.download([self.url])
+            
+            self.finished_signal.emit()
+            
         except Exception as e:
-            self.download_error.emit(f"Error: {str(e)}")
-
-class SearchResultWidget(QWidget):
-    clicked = pyqtSignal(str)
-
-    def __init__(self, video_info):
-        super().__init__()
-        self.video_info = video_info
-        self.initUI()
-
-    def initUI(self):
-        layout = QHBoxLayout()
-        self.setLayout(layout)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-
-        # Thumbnail
-        self.thumbnail_label = QLabel()
-        self.thumbnail_label.setFixedSize(120, 90)
-        self.thumbnail_label.setStyleSheet("border: 1px solid #ccc;")
-        layout.addWidget(self.thumbnail_label)
-
-        # Info
-        info_layout = QVBoxLayout()
-        self.title_label = QLabel(f"<b>{self.video_info.get('title', 'N/A')}</b>")
-        self.title_label.setWordWrap(True)
-        self.channel_label = QLabel(f"Channel: {self.video_info.get('channel', 'N/A')}")
-        self.duration_label = QLabel(f"Duration: {self.format_duration(self.video_info.get('duration'))}")
-        self.views_label = QLabel(f"Views: {self.format_views(self.video_info.get('view_count'))}")
-
-        info_layout.addWidget(self.title_label)
-        info_layout.addWidget(self.channel_label)
-        info_layout.addWidget(self.duration_label)
-        info_layout.addWidget(self.views_label)
-        layout.addLayout(info_layout)
-
-        layout.addStretch()
-
-        # Fetch thumbnail
-        if self.video_info.get('thumbnail'):
-            self.fetch_thumbnail(self.video_info['thumbnail'])
-
-    def fetch_thumbnail(self, url):
-         self.manager = QNetworkAccessManager()
-         self.manager.finished.connect(self.thumbnail_loaded)
-         request = QNetworkRequest(QUrl(url))
-         self.manager.get(request)
-
-    def thumbnail_loaded(self, reply):
-        if reply.error():
-            print(f"Error loading thumbnail: {reply.errorString()}")
-            return
-
-        image_data = reply.readAll()
-        pixmap = QPixmap()
-        pixmap.loadFromData(image_data)
-        self.thumbnail_label.setPixmap(pixmap.scaled(self.thumbnail_label.size(), aspectRatioMode=Qt.AspectRatioMode.KeepAspectRatio, transformMode=Qt.TransformationMode.SmoothTransformation))
-        reply.deleteLater()
-
-
-    def format_duration(self, seconds):
-        if seconds is None:
-            return "N/A"
-        m, s = divmod(seconds, 60)
-        h, m = divmod(m, 60)
-        return f"{int(h):02d}:{int(m):02d}:{int(s):02d}"
-
-    def format_views(self, views):
-        if views is None:
-            return "N/A"
-        if views < 1000:
-            return str(views)
-        elif views < 1000000:
-            return f"{views/1000:.1f}K"
-        else:
-            return f"{views/1000000:.1f}M"
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit(self.video_info.get('webpage_url', ''))
-            super().mousePressEvent(event)
+            self.error_signal.emit(str(e))
+    
+    def pause(self):
+        self.is_paused = True
+    
+    def resume(self):
+        self.is_paused = False
+    
+    def cancel(self):
+        self.is_cancelled = True
 
 
 class HwYtVidGrabber(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.settings = QSettings("MalikHw47", "HwYtVidGrabber")
-        self.default_video_path, self.default_audio_path = get_default_paths()
-        self.video_save_path = ""
-        self.audio_save_path = ""
         self.title_click_count = 0
-        self.player = QMediaPlayer()
-        self.audio_output = QAudioOutput()
-        self.player.setAudioOutput(self.audio_output)
-        self.current_theme = "Light"
-
-        self.load_settings()
-        self.apply_theme(self.current_theme)
-        self.setup_tray()
+        self.download_worker = None
         self.initUI()
-
-
-    def load_settings(self):
-        self.video_save_path = self.settings.value("video_save_path", self.default_video_path, type=str)
-        self.audio_save_path = self.settings.value("audio_save_path", self.default_audio_path, type=str)
-        self.current_theme = self.settings.value("theme", "Light", type=str)
-
-        # Ensure directories exist
-        os.makedirs(self.video_save_path, exist_ok=True)
-        os.makedirs(self.audio_save_path, exist_ok=True)
-
-    def apply_theme(self, theme):
-        palette = QPalette()
-        if theme == "Dark":
-            palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
-            palette.setColor(QPalette.ColorRole.WindowText, Qt.GlobalColor.white)
-            palette.setColor(QPalette.ColorRole.Base, QColor(25, 25, 25))
-            palette.setColor(QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
-            palette.setColor(QPalette.ColorRole.ToolTipBase, Qt.GlobalColor.white)
-            palette.setColor(QPalette.ColorRole.ToolTipText, Qt.GlobalColor.white)
-            palette.setColor(QPalette.ColorRole.Text, Qt.GlobalColor.white)
-            palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
-            palette.setColor(QPalette.ColorRole.ButtonText, Qt.GlobalColor.white)
-            palette.setColor(QPalette.ColorRole.BrightText, Qt.GlobalColor.red)
-            palette.setColor(QPalette.ColorRole.Link, QColor(42, 130, 218))
-            palette.setColor(QPalette.ColorRole.Highlight, QColor(42, 130, 218))
-            palette.setColor(QPalette.ColorRole.HighlightedText, Qt.GlobalColor.black)
-        else: # Light theme
-            palette = QApplication.instance().style().standardPalette()
-
-        QApplication.instance().setPalette(palette)
-        self.current_theme = theme
-
-    def setup_tray(self):
-        self.tray_icon = QSystemTrayIcon(self)
-        try:
-            app_icon = QIcon.fromTheme("video-display")
-            if app_icon.isNull():
-                app_icon = QIcon.fromTheme("applications-multimedia")
-                if app_icon.isNull():
-                    app_icon = self.style().standardIcon(QApplication.style().StandardPixmap.SP_MediaPlay)
-        except:
-            app_icon = self.style().standardIcon(QApplication.style().StandardPixmap.SP_MediaPlay)
-
-        self.tray_icon.setIcon(app_icon)
-        self.setWindowIcon(app_icon)
-
-        tray_menu = QMenu()
-        show_action = QAction("Show", self)
-        show_action.triggered.connect(self.show)
-
-        quit_action = QAction("Quit", self)
-        quit_action.triggered.connect(self.close_application)
-
-        tray_menu.addAction(show_action)
-        tray_menu.addAction(quit_action)
-
-        self.tray_icon.setContextMenu(tray_menu)
-        self.tray_icon.activated.connect(self.tray_icon_activated)
-        self.tray_icon.show()
-
-    def tray_icon_activated(self, reason):
-        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
-            self.show()
-
-    def hide_to_background(self):
-        self.hide()
-        self.tray_icon.showMessage(
-            "HwYtVidGrabber",
-            "Application is still running in the background",
-            QSystemTrayIcon.MessageIcon.Information,
-            2000
-        )
-
-    def close_application(self):
-        self.tray_icon.hide()
-        QApplication.quit()
-
-    def closeEvent(self, event):
-        if self.tray_icon.isVisible():
-            QMessageBox.information(
-                self,
-                "HwYtVidGrabber",
-                "The application will keep running in the system tray.\n"
-                "To terminate the program, choose 'Quit' in the context menu "
-                "of the system tray entry."
-            )
-            self.hide()
-            event.ignore()
-        else:
-            event.accept()
-
+        self.loadSettings()
+        self.checkFFmpeg()
+    
     def initUI(self):
-        self.setWindowTitle("HwYtVidGrabber v1.2 by MalikHw47")
-        self.setGeometry(100, 100, 600, 600) # Increased height
-
-        main_widget = QWidget()
-        main_layout = QVBoxLayout()
-
-        self.title_label = QLabel("HwYtVidGrabber v1.2")
-        title_font = QFont()
-        title_font.setPointSize(16)
-        title_font.setBold(True)
-        self.title_label.setFont(title_font)
-        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.title_label.installEventFilter(self) # Install event filter
-        main_layout.addWidget(self.title_label)
-
-        author_label = QLabel("By: MalikHw47")
-        author_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main_layout.addWidget(author_label)
-
-        donate_btn = QPushButton("Support Development ☕")
-        donate_btn.setStyleSheet("background-color: #ff5f5f; color: white; font-weight: bold;")
-        donate_btn.clicked.connect(self.open_donation_page)
-        main_layout.addWidget(donate_btn)
-
-        main_layout.addSpacing(10)
-
-        # Use Tabs for different sections
-        tab_widget = QTabWidget()
-        main_layout.addWidget(tab_widget)
-
-        # Download Tab
-        download_widget = QWidget()
-        download_layout = QVBoxLayout(download_widget)
-        tab_widget.addTab(download_widget, "Download")
-
+        self.setWindowTitle("HwYtVidGrabber v1.2")
+        self.setFixedSize(600, 400)
+        
+        # Set app icon
+        if platform.system() == "Windows":
+            self.setWindowIcon(QIcon("icon.ico"))
+        else:
+            self.setWindowIcon(QIcon("icon.png"))
+        
+        # Create central widget and layout
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+        
+        # Create title label with clickable property
+        title_label = QLabel("HwYtVidGrabber v1.2")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_label.setStyleSheet("font-size: 20px; font-weight: bold;")
+        title_label.mousePressEvent = self.titleClicked
+        main_layout.addWidget(title_label)
+        
+        # URL input
         url_layout = QHBoxLayout()
         url_label = QLabel("YouTube URL:")
         self.url_input = QLineEdit()
-        self.url_input.setPlaceholderText("Paste YouTube URL here...")
+        self.url_input.setPlaceholderText("Enter YouTube URL here...")
+        self.url_input.textChanged.connect(self.urlChanged)  # Add listener for URL changes
         url_layout.addWidget(url_label)
         url_layout.addWidget(self.url_input)
-        download_layout.addLayout(url_layout)
-
-        # Display Metadata
-        self.metadata_group = QFrame()
-        self.metadata_group.setStyleSheet("border: 1px solid #ccc; padding: 10px; border-radius: 5px;")
-        self.metadata_layout = QVBoxLayout(self.metadata_group)
-        self.metadata_title = QLabel("<b>Video Information</b>")
-        self.metadata_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.metadata_layout.addWidget(self.metadata_title)
-        self.metadata_layout.addSpacing(5)
-
-        self.metadata_labels = {}
-        info_keys = ["Title", "Channel", "Duration", "Views"]
-        for key in info_keys:
-            label = QLabel(f"{key}: ")
-            self.metadata_labels[key] = label
-            self.metadata_layout.addWidget(label)
-
-        download_layout.addWidget(self.metadata_group)
-        self.metadata_group.setVisible(False) # Hide initially
-
-
-        # Format Presets
-        presets_layout = QHBoxLayout()
-        presets_label = QLabel("Format Preset:")
-        self.preset_combo = QComboBox()
-        self.preset_combo.addItems(["Custom", "Best Quality", "Low Data (360p)", "Medium (480p)"])
-        self.preset_combo.currentTextChanged.connect(self.apply_preset)
-        presets_layout.addWidget(presets_label)
-        presets_layout.addWidget(self.preset_combo)
-        download_layout.addLayout(presets_layout)
-
-        # Custom Format Options (initially visible for "Custom")
-        self.custom_options_widget = QWidget()
-        self.custom_options_layout = QVBoxLayout(self.custom_options_widget)
-
-        resolution_layout = QHBoxLayout()
-        resolution_label = QLabel("Resolution:")
-        self.resolution_combo = QComboBox()
-        self.resolution_combo.addItems(["144", "240", "360", "480", "720", "1080", "1440", "2160"])
-        self.resolution_combo.setCurrentText("720")
-        resolution_layout.addWidget(resolution_label)
-        resolution_layout.addWidget(self.resolution_combo)
-        self.custom_options_layout.addLayout(resolution_layout)
-
+        main_layout.addLayout(url_layout)
+        
+        # Video info display
+        info_layout = QHBoxLayout()
+        self.title_label = QLabel("Title: ")
+        self.author_label = QLabel("Channel: ")
+        info_layout.addWidget(self.title_label)
+        info_layout.addWidget(self.author_label)
+        main_layout.addLayout(info_layout)
+        
+        # Format options
         format_layout = QHBoxLayout()
         format_label = QLabel("Format:")
         self.format_combo = QComboBox()
-        self.format_combo.addItems(["mp4", "mp3", "muted_mp4"])
+        self.format_combo.addItems(["mp4", "mp3", "muted mp4"])
         format_layout.addWidget(format_label)
         format_layout.addWidget(self.format_combo)
-        self.custom_options_layout.addLayout(format_layout)
-
-        fps_layout = QHBoxLayout()
-        self.fps_checkbox = QCheckBox("Prefer 60fps (for 720p and above)")
-        self.fps_checkbox.setChecked(True)
-        self.update_fps_checkbox_state()
-        self.resolution_combo.currentTextChanged.connect(self.update_fps_checkbox_state)
-        self.format_combo.currentTextChanged.connect(self.update_fps_checkbox_state)
-        fps_layout.addWidget(self.fps_checkbox)
-        self.custom_options_layout.addLayout(fps_layout)
-
-        download_layout.addWidget(self.custom_options_widget)
-
-        # Subtitle Options
-        subtitle_layout = QHBoxLayout()
-        self.subtitle_checkbox = QCheckBox("Download Subtitles")
-        self.subtitle_language_input = QLineEdit()
-        self.subtitle_language_input.setPlaceholderText("e.g., en, fr, auto (comma-separated)")
-        self.subtitle_language_input.setEnabled(False) # Disabled by default
-        self.subtitle_checkbox.toggled.connect(self.subtitle_language_input.setEnabled)
-        subtitle_layout.addWidget(self.subtitle_checkbox)
-        subtitle_layout.addWidget(QLabel("Language(s):"))
-        subtitle_layout.addWidget(self.subtitle_language_input)
-        download_layout.addLayout(subtitle_layout)
-
-        download_layout.addSpacing(10)
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setValue(0)
-        download_layout.addWidget(self.progress_bar)
-
-        self.status_label = QLabel("Ready to download")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        download_layout.addWidget(self.status_label)
-
-        self.download_info_label = QLabel("")
-        self.download_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        download_layout.addWidget(self.download_info_label)
-
-        save_path_frame = QFrame()
-        save_path_frame.setStyleSheet("border: 1px solid #f0f0f0; background-color: #f0f0f0; border-radius: 5px; padding: 5px;")
-        save_path_layout = QVBoxLayout(save_path_frame)
-
-        save_path_heading = QLabel("Current Save Location:")
-        save_path_heading.setStyleSheet("font-weight: bold;")
-
-        self.save_path_label = QLabel("")
-        self.save_path_label.setWordWrap(True)
-
-        save_path_layout.addWidget(save_path_heading)
-        save_path_layout.addWidget(self.save_path_label)
-
-        download_layout.addWidget(save_path_frame)
-
-        self.update_save_path_label() # Initial update
-        self.format_combo.currentTextChanged.connect(self.update_save_path_label)
-        self.preset_combo.currentTextChanged.connect(self.update_save_path_label) # Update on preset change
-
-        buttons_layout = QHBoxLayout()
-
-        self.download_btn = QPushButton("Download")
-        self.download_btn.clicked.connect(self.start_download)
-        buttons_layout.addWidget(self.download_btn)
-
-        self.hide_btn = QPushButton("Hide to Background")
-        self.hide_btn.clicked.connect(self.hide_to_background)
-        buttons_layout.addWidget(self.hide_btn)
-
-        self.settings_btn = QPushButton("Settings")
-        self.settings_btn.clicked.connect(self.open_settings)
-        buttons_layout.addWidget(self.settings_btn)
-
-        download_layout.addLayout(buttons_layout)
-        download_layout.addStretch()
-
-
-
-        main_widget.setLayout(main_layout)
-        self.setCentralWidget(main_widget)
-
-    def eventFilter(self, obj, event):
-        if obj == self.title_label and event.type() == QEvent.Type.MouseButtonPress:
-            if event.button() == Qt.MouseButton.LeftButton:
-                self.title_click_count += 1
-                if self.title_click_count >= 10:
-                    self.trigger_easter_egg()
-                    self.title_click_count = 0 # Reset count
-            return True # Consume the event
-        return super().eventFilter(obj, event)
-
-    def trigger_easter_egg(self):
-        # Play sound effect
-        sound_file = os.path.join(os.path.dirname(__file__), "resources", "lol.wav")
-        if os.path.exists(sound_file):
-            self.player.setSource(QUrl.fromLocalFile(sound_file))
-            self.player.play()
-        else:
-            print(f"Sound file not found: {sound_file}")
-
-
-        original_text = self.title_label.text()
-        original_font = self.title_label.font()
-        original_palette = self.title_label.palette() # Store original palette
-
-        # Sequence of text changes with timers
-        QTimer.singleShot(200, lambda: self.title_label.setText("Miku"))
-        QTimer.singleShot(400, lambda: self.title_label.setText("Miku Miku"))
-        QTimer.singleShot(600, lambda: self.change_title_beam(original_font, original_palette)) # Change to BEEAAAAAAAM and shake
-        QTimer.singleShot(3600, lambda: self.reset_title(original_text, original_font, original_palette)) # Revert after 3 seconds
-
-    def change_title_beam(self, original_font, original_palette):
-        self.title_label.setText("BEEAAAAAAAM")
-        # Make text red and bold
-        palette = QPalette()
-        palette.setColor(QPalette.ColorRole.WindowText, Qt.GlobalColor.red)
-        self.title_label.setPalette(palette)
-
-        font = self.title_label.font()
-        font.setBold(True)
-        font.setPointSize(20) # Make it bigger
-        self.title_label.setFont(font)
-
-        # Shake effect animation
-        self.shake_animation = QPropertyAnimation(self.title_label, b"pos")
-        self.shake_animation.setDuration(300)
-        self.shake_animation.setLoopCount(2)
-        initial_pos = self.title_label.pos()
-        self.shake_animation.setKeyValueAt(0, initial_pos)
-        self.shake_animation.setKeyValueAt(0.1, initial_pos + QPoint(5, 0))
-        self.shake_animation.setKeyValueAt(0.3, initial_pos + QPoint(-5, 0))
-        self.shake_animation.setKeyValueAt(0.5, initial_pos + QPoint(5, 0))
-        self.shake_animation.setKeyValueAt(0.7, initial_pos + QPoint(-5, 0))
-        self.shake_animation.setKeyValueAt(0.9, initial_pos + QPoint(5, 0))
-        self.shake_animation.setKeyValueAt(1, initial_pos)
-        self.shake_animation.start()
-
-
-    def reset_title(self, original_text, original_font, original_palette):
-        self.title_label.setText(original_text)
-        self.title_label.setFont(original_font)
-        self.title_label.setPalette(original_palette) # Restore original palette
-
-
-    def get_screen_resolution(self):
-        screen = QApplication.primaryScreen()
-        return screen.geometry().height()
-
-    def apply_preset(self, preset):
-        if preset == "Custom":
-            self.custom_options_widget.setVisible(True)
-        else:
-            self.custom_options_widget.setVisible(False)
-            if preset == "Best Quality":
-                screen_height = self.get_screen_resolution()
-                if screen_height >= 2160:
-                    self.resolution_combo.setCurrentText("2160")
-                elif screen_height >= 1440:
-                    self.resolution_combo.setCurrentText("1440")
-                else:
-                    self.resolution_combo.setCurrentText("1080")
-                self.format_combo.setCurrentText("mp4")
-                self.fps_checkbox.setChecked(True)
-            elif preset == "Low Data (360p)":
-                self.resolution_combo.setCurrentText("360")
-                self.format_combo.setCurrentText("mp4")
-                self.fps_checkbox.setChecked(False)
-            elif preset == "Medium (480p)":
-                self.resolution_combo.setCurrentText("480")
-                self.format_combo.setCurrentText("mp4")
-                self.fps_checkbox.setChecked(False)
-
-        self.update_save_path_label() # Update save path display based on format
-
-    def update_save_path_label(self):
-        format_type = self.format_combo.currentText()
-        save_path = self.audio_save_path if format_type == "mp3" else self.video_save_path
-        os.makedirs(save_path, exist_ok=True) # Ensure directory exists
-        self.save_path_label.setText(save_path)
-
-    def open_donation_page(self):
-        url = "https://ko-fi.com/MalikHw47"
-        if platform.system() == 'Windows':
-            os.startfile(url)
-        elif platform.system() == 'Darwin':
-            subprocess.call(['open', url])
-        else:
-            subprocess.call(['xdg-open', url])
-
-    def update_fps_checkbox_state(self):
-        resolution = int(self.resolution_combo.currentText())
-        format_type = self.format_combo.currentText()
-        self.fps_checkbox.setEnabled(resolution >= 720 and format_type != "mp3")
-        if not self.fps_checkbox.isEnabled():
-            self.fps_checkbox.setChecked(False)
-
-    def open_settings(self):
-        settings_dialog = SettingsDialog(self)
-        settings_dialog.exec()
-        self.update_save_path_label() # Update save path after settings change
-        self.apply_theme(self.current_theme) # Apply theme after settings change
-
-    def fetch_metadata(self):
-        url = self.url_input.text().strip()
-        if not url:
-            QMessageBox.warning(self, "Error", "Please enter a YouTube URL")
-            return
-
-        self.status_label.setText("Fetching video information...")
-        self.metadata_group.setVisible(False) # Hide previous metadata
-        QApplication.processEvents() # Update UI
-
-        self.metadata_thread = MetadataFetchThread(url)
-        self.metadata_thread.metadata_fetched.connect(self.display_metadata)
-        self.metadata_thread.error_occurred.connect(self.metadata_fetch_error)
-        self.metadata_thread.start()
-
-    def display_metadata(self, metadata):
-        self.metadata_labels["Title"].setText(f"Title: {metadata.get('title', 'N/A')}")
-        self.metadata_labels["Channel"].setText(f"Channel: {metadata.get('channel', 'N/A')}")
-        self.metadata_labels["Duration"].setText(f"Duration: {self.format_duration(metadata.get('duration'))}")
-        self.metadata_labels["Views"].setText(f"Views: {self.format_views(metadata.get('view_count'))}")
-        self.metadata_group.setVisible(True)
-        self.status_label.setText("Metadata fetched.")
-        self.fetched_metadata = metadata # Store fetched metadata for download
-
-    def metadata_fetch_error(self, error_msg):
-        self.status_label.setText("Error fetching metadata.")
-        self.metadata_group.setVisible(False)
-        QMessageBox.critical(self, "Metadata Fetch Error", error_msg)
-
-    def start_download(self):
-        url = self.url_input.text().strip()
-        if not url:
-            QMessageBox.warning(self, "Error", "Please enter a YouTube URL")
-            return
-
-        resolution = self.resolution_combo.currentText()
-        format_type = self.format_combo.currentText()
-        prefer_60fps = self.fps_checkbox.isChecked()
-
-        save_path = self.audio_save_path if format_type == "mp3" else self.video_save_path
-
-        try:
-            os.makedirs(save_path, exist_ok=True)
-        except Exception as e:
-            QMessageBox.warning(self, "Error", f"Could not create directory: {str(e)}")
-            return
-
-        self.update_save_path_label()
-
-        self.download_btn.setEnabled(False)
-        self.status_label.setText("Getting video information...")
-        self.progress_bar.setValue(0)
-        self.download_info_label.setText("Initializing...")
-
-        ydl_format_options = {}
-        ydl_extra_opts = {}
-
-        if format_type == "mp3":
-            ydl_format_options = {
-                'format': 'bestaudio/best',
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }],
-                 'extract_audio': True, # Ensure audio extraction is enabled
-                 'audio_format': 'mp3',
-            }
-        elif format_type == "mp4":
-            format_string = f'bestvideo[height<={resolution}]+bestaudio/best[height<={resolution}]'
-            if prefer_60fps and int(resolution) >= 720:
-                format_string = f'bestvideo[height<={resolution}][fps>=60]+bestaudio/best[height<={resolution}][fps<=60]' # Limit audio fps to prevent issues
-            ydl_format_options = {
-                'format': format_string,
-                'merge_output_format': 'mp4',
-            }
-        elif format_type == "muted_mp4":
-            format_string = f'bestvideo[height<={resolution}]'
-            if prefer_60fps and int(resolution) >= 720:
-                format_string = f'bestvideo[height<={resolution}][fps>=60]'
-            ydl_format_options = {
-                'format': format_string,
-                'merge_output_format': 'mp4',
-                'postprocessors': [{
-                    'key': 'FFmpegVideoRemuxer',
-                    'preferedformat': 'mp4',
-                }],
-                 'keepvideo': False, # Remove the original video file after remuxing
-            }
-
-        # Add subtitle options
-        if self.subtitle_checkbox.isChecked():
-            print(f"Attempting to download subtitles in languages: {self.subtitle_language_input.text()}")
-            ydl_extra_opts['writesubtitles'] = True
-            ydl_extra_opts['subtitlesformat'] = 'srt'  # Specify SRT format
-    
-            # Better language handling
-            langs = [lang.strip() for lang in self.subtitle_language_input.text().split(',') if lang.strip()]
-    
-            if not langs:
-                langs = ['en']  # Default to English if no language specified
-    
-            # Handle automatic subtitles
-        if 'auto' in langs:
-            ydl_extra_opts['writeautomaticsub'] = True
-            langs.remove('auto')
+        main_layout.addLayout(format_layout)
         
-        ydl_extra_opts['subtitleslangs'] = langs
+        # Resolution options
+        res_layout = QHBoxLayout()
+        res_label = QLabel("Resolution:")
+        self.res_combo = QComboBox()
+        self.res_combo.addItems(["144p", "360p", "480p", "HD", "FHD", "2K", "4K", "Max"])
+        res_layout.addWidget(res_label)
+        res_layout.addWidget(self.res_combo)
+        
+        # Default to Max resolution
+        self.res_combo.setCurrentText("Max")
+        
+        # 60fps checkbox
+        self.fps_checkbox = QCheckBox("60fps")
+        res_layout.addWidget(self.fps_checkbox)
+        main_layout.addLayout(res_layout)
+        
+        # Download button - set to red
+        self.download_btn = QPushButton("Download")
+        self.download_btn.setStyleSheet("background-color: #ff3333; color: white; font-weight: bold;")
+        self.download_btn.clicked.connect(self.startDownload)
+        main_layout.addWidget(self.download_btn)
+        
+        # Progress bar
+        self.progress_bar = QProgressBar()
+        main_layout.addWidget(self.progress_bar)
+        
+        # Progress info labels
+        progress_info_layout = QHBoxLayout()
+        self.speed_label = QLabel("Speed: -")
+        self.size_label = QLabel("Size: -")
+        self.eta_label = QLabel("ETA: -")
+        progress_info_layout.addWidget(self.speed_label)
+        progress_info_layout.addWidget(self.size_label)
+        progress_info_layout.addWidget(self.eta_label)
+        main_layout.addLayout(progress_info_layout)
+        
+        # Control buttons
+        control_layout = QHBoxLayout()
+        self.pause_btn = QPushButton("Pause")
+        self.pause_btn.clicked.connect(self.togglePause)
+        self.pause_btn.setEnabled(False)
+        
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.clicked.connect(self.cancelDownload)
+        self.cancel_btn.setEnabled(False)
+        
+        control_layout.addWidget(self.pause_btn)
+        control_layout.addWidget(self.cancel_btn)
+        main_layout.addLayout(control_layout)
+        
+        # Bottom buttons
+        bottom_layout = QHBoxLayout()
+        
+        settings_btn = QPushButton("Settings")
+        settings_btn.clicked.connect(self.openSettings)
+        
+        support_btn = QPushButton("Support Dev")
+        support_btn.clicked.connect(lambda: webbrowser.open("https://www.ko-fi.com/MalikHw47"))
+        
+        bottom_layout.addWidget(settings_btn)
+        bottom_layout.addWidget(support_btn)
+        
+        main_layout.addLayout(bottom_layout)
+        
+        # Status label for processing indication
+        self.status_label = QLabel("")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(self.status_label)
+        
+        # Default settings
+        self.save_path = os.path.expanduser("~/Downloads/HwYtVidGrabber/")
+        self.dark_mode = False
+        
+        # Create default save directory if it doesn't exist and check permissions
+        self.checkSavePathPermissions()
     
-        # Add subtitle conversion post-processor
-        if 'postprocessors' not in ydl_extra_opts:
-            ydl_extra_opts['postprocessors'] = []
+    def urlChanged(self, url):
+        """Handle URL changes to check for rickroll"""
+        if "xvFZjo5PgG0" in url:
+            self.title_label.setText("Title: ????")
+            self.author_label.setText("Channel: ????")
     
-        ydl_extra_opts['postprocessors'].append({
-            'key': 'FFmpegSubtitlesConvertor',
-            'format': 'srt',
-        })
-
-        self.download_thread = DownloadThread(url, ydl_format_options, save_path, ydl_extra_opts)
-        self.download_thread.progress_update.connect(self.update_progress)
-        self.download_thread.download_info.connect(self.update_download_info)
-        self.download_thread.download_complete.connect(self.download_finished)
-        self.download_thread.download_error.connect(self.download_error)
-        self.download_thread.metadata_download_finished.connect(self.apply_mp3_metadata) # Connect new signal
-        self.download_thread.start()
-
-    def update_progress(self, value):
-        if value == -1:
-            self.progress_bar.setRange(0, 0)
+    def checkSavePathPermissions(self):
+        try:
+            if not os.path.exists(self.save_path):
+                os.makedirs(self.save_path)
+            
+            # Test if we can write to this directory
+            test_file = os.path.join(self.save_path, ".write_test")
+            with open(test_file, 'w') as f:
+                f.write("test")
+            os.remove(test_file)
+        except Exception as e:
+            QMessageBox.warning(self, "Permission Error", 
+                               f"Cannot write to save directory: {self.save_path}\nError: {str(e)}\n\nPlease choose a different directory in Settings.")
+    
+    def titleClicked(self, event):
+        self.title_click_count += 1
+        if self.title_click_count == 10:
+            self.url_input.setText("https://youtu.be/xvFZjo5PgG0?si=vMD2fi9Qf85nPLws")
+            self.title_click_count = 0
+    
+    def updateVideoInfo(self, info):
+        self.title_label.setText(f"Title: {info.get('title', 'Unknown')}")
+        self.author_label.setText(f"Channel: {info.get('uploader', 'Unknown')}")
+    
+    def updateAvailableFormats(self, format_info):
+        """Update resolution combo based on available formats"""
+        max_res = format_info.get('max_resolution')
+        
+        # Only adjust if user selected a resolution higher than available
+        current_res = self.res_combo.currentText()
+        if current_res != "Max":  # Don't adjust if "Max" is selected
+            res_hierarchy = ["144p", "360p", "480p", "HD", "FHD", "2K", "4K"]
+            current_index = res_hierarchy.index(current_res) if current_res in res_hierarchy else -1
+            max_index = res_hierarchy.index(max_res) if max_res in res_hierarchy else -1
+            
+            if current_index > max_index and max_index >= 0:
+                self.res_combo.setCurrentText(max_res)
+                self.status_label.setText(f"Adjusted to maximum available resolution: {max_res}")
+    
+    def startDownload(self):
+        url = self.url_input.text().strip()
+        if not url:
+            QMessageBox.warning(self, "Error", "Please enter a YouTube URL!")
+            return
+        
+        # Disable download button to prevent multiple downloads
+        self.download_btn.setEnabled(False)
+        
+        # Show processing status
+        self.status_label.setText("Processing...")
+        
+        format_option = self.format_combo.currentText()
+        resolution = self.res_combo.currentText()
+        fps_60 = self.fps_checkbox.isChecked()
+        
+        # Check again if save directory exists and is writable
+        self.checkSavePathPermissions()
+        
+        # Reset progress indicators
+        self.progress_bar.setValue(0)
+        self.speed_label.setText("Speed: -")
+        self.size_label.setText("Size: -")
+        self.eta_label.setText("ETA: -")
+        
+        # Create and start download worker
+        self.download_worker = DownloadWorker(url, self.save_path, format_option, resolution, fps_60)
+        self.download_worker.progress_signal.connect(self.updateProgress)
+        self.download_worker.finished_signal.connect(self.downloadFinished)
+        self.download_worker.error_signal.connect(self.downloadError)
+        self.download_worker.info_signal.connect(self.updateVideoInfo)
+        self.download_worker.available_formats_signal.connect(self.updateAvailableFormats)
+        
+        self.download_worker.start()
+        
+        # Update UI state
+        self.pause_btn.setEnabled(True)
+        self.pause_btn.setText("Pause")
+        self.cancel_btn.setEnabled(True)
+    
+    def updateProgress(self, progress_info):
+        # Clear the processing message once download starts
+        self.status_label.setText("")
+        
+        # Make sure percentage is a valid number
+        try:
+            percent = int(progress_info['percent'])
+            if 0 <= percent <= 100:  # Ensure percentage is in valid range
+                self.progress_bar.setValue(percent)
+        except (ValueError, TypeError):
+            # If conversion fails, don't update progress bar
+            pass
+            
+        self.speed_label.setText(f"Speed: {progress_info['speed']}")
+        self.size_label.setText(f"Size: {progress_info['total_size']}")
+        self.eta_label.setText(f"ETA: {progress_info['eta']}")
+    
+    def downloadFinished(self):
+        self.progress_bar.setValue(100)
+        self.download_btn.setEnabled(True)
+        self.pause_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(False)
+        self.speed_label.setText("Speed: -")
+        self.eta_label.setText("ETA: -")
+        self.status_label.setText("Download completed!")
+        QMessageBox.information(self, "Success", "Download completed successfully!")
+    
+    def downloadError(self, error_msg):
+        if "Download cancelled" not in error_msg:
+            QMessageBox.warning(self, "Error", f"Download failed: {error_msg}")
+        
+        self.download_btn.setEnabled(True)
+        self.pause_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(False)
+        self.speed_label.setText("Speed: -")
+        self.size_label.setText("Size: -")
+        self.eta_label.setText("ETA: -")
+        self.status_label.setText("")
+    
+    def togglePause(self):
+        if not self.download_worker:
+            return
+        
+        if self.download_worker.is_paused:
+            self.download_worker.resume()
+            self.pause_btn.setText("Pause")
             self.status_label.setText("Downloading...")
         else:
-            self.progress_bar.setRange(0, 100)
-            self.progress_bar.setValue(value)
-            if value < 10:
-                 self.status_label.setText("Processing video...")
-            elif value < 99:
-                self.status_label.setText("Downloading...")
-            else:
-                self.status_label.setText("Finishing download...")
-
-
-    def update_download_info(self, info):
-        self.download_info_label.setText(info)
-        self.tray_icon.setToolTip(f"HwYtVidGrabber - {info}")
-
-        if not self.isVisible() and ("%" in info or "downloaded" in info) and "ETA" in info:
-             # Show notification for significant progress updates (with ETA)
-             self.tray_icon.showMessage(
-                 "Download Progress",
-                 info,
-                 QSystemTrayIcon.MessageIcon.Information,
-                 1000
-             )
-
-
-    def apply_mp3_metadata(self, metadata, file_path):
-        if file_path.endswith('.mp3'):
-            try:
-                audiofile = eyed3.load(file_path)
-                if audiofile.tag is None:
-                    audiofile.initTag()
-
-                audiofile.tag.title = metadata.get('title', 'N/A')
-                audiofile.tag.artist = metadata.get('channel', 'N/A')
-                audiofile.tag.album = "YouTube"
-                audiofile.tag.save()
-                print(f"Applied metadata to {os.path.basename(file_path)}")
-            except Exception as e:
-                print(f"Error applying MP3 metadata to {os.path.basename(file_path)}: {str(e)}")
-
-
-    def download_finished(self, file_path):
-        # Convert to H.264 if it's a video file
-        if file_path.endswith('.mp4'):
-            file_path = self.convert_to_h264(file_path)
+            self.download_worker.pause()
+            self.pause_btn.setText("Resume")
+            self.status_label.setText("Paused")
+    
+    def cancelDownload(self):
+        if not self.download_worker:
+            return
         
-        self.progress_bar.setValue(100)
-        self.status_label.setText(f"Download complete: {os.path.basename(file_path)}")
-        self.download_btn.setEnabled(True)
-        self.download_info_label.setText("Download complete")
-        self.metadata_group.setVisible(False) # Hide metadata after download
-    
-        self.tray_icon.showMessage(
-            "Download Complete",
-            f"File saved: {os.path.basename(file_path)}",
-            QSystemTrayIcon.MessageIcon.Information,
-            3000
-        )
-    
-        reply = QMessageBox.question(self, "Download Complete",
-                                    f"File saved to: {file_path}\n\nDo you want to open the containing folder?",
-                                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-    
-        if reply == QMessageBox.StandardButton.Yes:
-            if platform.system() == 'Windows':
-                os.startfile(os.path.dirname(file_path))
-            elif platform.system() == 'Darwin':
-                subprocess.call(['open', os.path.dirname(file_path)])
-            else:
-                subprocess.call(['xdg-open', os.path.dirname(file_path)])
-        
-        # Execute post-download action
-        self.execute_post_download_action()
-
-    def download_error(self, error_msg):
+        self.download_worker.cancel()
         self.progress_bar.setValue(0)
-        self.status_label.setText("Error occurred")
         self.download_btn.setEnabled(True)
-        self.download_info_label.setText("")
-        self.metadata_group.setVisible(False)
-        QMessageBox.critical(self, "Download Error", error_msg)
-
-    def format_duration(self, seconds):
-        if seconds is None:
-            return "N/A"
-        m, s = divmod(seconds, 60)
-        h, m = divmod(m, 60)
-        return f"{int(h):02d}:{int(m):02d}:{int(s):02d}"
-
-    def format_views(self, views):
-        if views is None:
-            return "N/A"
-        if views < 1000:
-            return str(views)
-        elif views < 1000000:
-            return f"{views/1000:.1f}K"
-        else:
-            return f"{views/1000000:.1f}M"
-
-    def open_search_dialog(self):
-        search_dialog = SearchDialog(self)
-        search_dialog.exec()
-
-    def execute_post_download_action(self):
-        action = self.settings.value("post_download_action", "Nothing")
-        if action == "Nothing":
-            pass
-        elif action == "Sleep PC":
-            if platform.system() == 'Windows':
-                os.system("rundll32.exe powrprof.dll,SetSuspendState 0,1,0")
-            elif platform.system() == 'Darwin':  # macOS
-                os.system("pmset sleepnow")
-            else:  # Linux
-                os.system("systemctl suspend")
-        elif action == "Terminate App":
-            self.close_application()
-        elif action == "Restart PC":
-            if platform.system() == 'Windows':
-                os.system("shutdown /r /t 1")
-            elif platform.system() == 'Darwin':  # macOS
-                os.system("shutdown -r now")
-            else:  # Linux
-                os.system("shutdown -r now")
-        elif action == "Shutdown PC":
-            if platform.system() == 'Windows':
-                os.system("shutdown /s /t 1")
-            elif platform.system() == 'Darwin':  # macOS
-                os.system("shutdown -h now")
-            else:  # Linux
-                os.system("shutdown -h now")
-
-    def convert_to_h264(self, file_path):
-        if not file_path.endswith('.mp4'):
-            return file_path
-            
-        output_path = file_path + ".h264.mp4"
-        self.status_label.setText("Converting to H.264...")
-        self.download_info_label.setText("Converting video format...")
-        
+        self.pause_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(False)
+        self.status_label.setText("Download cancelled")
+    
+    def checkFFmpeg(self):
         try:
-            cmd = [
-                'ffmpeg',
-                '-i', file_path,
-                '-c:v', 'libx264',
-                '-preset', 'medium',
-                '-crf', '23',
-                '-c:a', 'aac',
-                '-b:a', '128k',
-                output_path
-            ]
-            subprocess.run(cmd, check=True)
-            
-            # Replace original file with converted file
-            os.remove(file_path)
-            os.rename(output_path, file_path)
-            return file_path
-        except Exception as e:
-            self.download_info_label.setText(f"Conversion error: {str(e)}")
-            return file_path
+            # Try to run ffmpeg
+            result = subprocess.run(["ffmpeg", "-version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if result.returncode != 0:
+                raise Exception("FFmpeg returned non-zero exit code")
+        except Exception:
+            # FFmpeg not found
+            if platform.system() == "Windows":
+                reply = QMessageBox.question(self, "FFmpeg Not Found",
+                                     "FFmpeg is not installed. Do you want to download it?",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                if reply == QMessageBox.StandardButton.Yes:
+                    webbrowser.open("https://ffmpeg.org/download.html")
+            else:
+                reply = QMessageBox.question(self, "FFmpeg Not Found",
+                                     "FFmpeg is not installed. Do you want to install it now?",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                if reply == QMessageBox.StandardButton.Yes:
+                    # Use distro detection that works on Python 3.8+
+                    if platform.system() == "Linux":
+                        try:
+                            with open("/etc/os-release", "r") as f:
+                                os_info = f.read().lower()
+                                if "ubuntu" in os_info or "debian" in os_info:
+                                    cmd = "sudo apt-get install ffmpeg"
+                                elif "fedora" in os_info:
+                                    cmd = "sudo dnf install ffmpeg"
+                                elif "arch" in os_info:
+                                    cmd = "sudo pacman -S ffmpeg"
+                                else:
+                                    cmd = "sudo apt-get install ffmpeg"
+                        except:
+                            cmd = "sudo apt-get install ffmpeg"
+                    else:
+                        cmd = "sudo apt-get install ffmpeg"
+                    
+                    try:
+                        os.system(f"x-terminal-emulator -e '{cmd}'")
+                        # Check if installation was successful
+                        self.checkFFmpegAfterInstall()
+                    except Exception as e:
+                        QMessageBox.warning(self, "Error", f"Failed to launch terminal: {str(e)}")
+    
+    def checkFFmpegAfterInstall(self):
+        # Wait a bit for installation to complete
+        QTimer.singleShot(5000, lambda: self._checkFFmpegInstalled())
+    
+    def _checkFFmpegInstalled(self):
+        try:
+            subprocess.run(["ffmpeg", "-version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            QMessageBox.information(self, "Success", "FFmpeg installed successfully!")
+        except:
+            QMessageBox.warning(self, "Error", "FFmpeg installation may have failed. Please install it manually.")
+    
+    def openSettings(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Settings")
+        layout = QVBoxLayout(dialog)
+        
+        # Save path
+        path_layout = QHBoxLayout()
+        path_label = QLabel("Save Path:")
+        path_input = QLineEdit(self.save_path)
+        browse_btn = QPushButton("Browse")
+        
+        def browsePath():
+            path = QFileDialog.getExistingDirectory(dialog, "Select Directory", self.save_path)
+            if path:
+                path_input.setText(path)
+        
+        browse_btn.clicked.connect(browsePath)
+        
+        path_layout.addWidget(path_label)
+        path_layout.addWidget(path_input)
+        path_layout.addWidget(browse_btn)
+        layout.addLayout(path_layout)
+        
+        # Dark mode
+        dark_mode_check = QCheckBox("Dark Mode")
+        dark_mode_check.setChecked(self.dark_mode)
+        layout.addWidget(dark_mode_check)
+        
+        # Buttons
+        btn_layout = QHBoxLayout()
+        save_btn = QPushButton("Save")
+        cancel_btn = QPushButton("Cancel")
+        
+        def saveSettings():
+            new_path = path_input.text()
+            # Validate new path
+            try:
+                if not os.path.exists(new_path):
+                    os.makedirs(new_path)
+                test_file = os.path.join(new_path, ".write_test")
+                with open(test_file, 'w') as f:
+                    f.write("test")
+                os.remove(test_file)
+                self.save_path = new_path
+            except Exception as e:
+                QMessageBox.warning(dialog, "Permission Error", 
+                                   f"Cannot write to selected directory: {str(e)}")
+                return
+                
+            self.dark_mode = dark_mode_check.isChecked()
+            self.applyDarkMode(self.dark_mode)
+            self.saveSettings()
+            dialog.accept()
+        
+        save_btn.clicked.connect(saveSettings)
+        cancel_btn.clicked.connect(dialog.reject)
+        
+        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+        
+        dialog.setLayout(layout)
+        dialog.exec()
+    
+    def loadSettings(self):
+        try:
+            if os.path.exists("settings.json"):
+                with open("settings.json", "r") as f:
+                    settings = json.load(f)
+                    self.save_path = settings.get("save_path", self.save_path)
+                    self.dark_mode = settings.get("dark_mode", False)
+                    self.applyDarkMode(self.dark_mode)
+        except Exception:
+            pass
+    
+    def saveSettings(self):
+        try:
+            with open("settings.json", "w") as f:
+                json.dump({
+                    "save_path": self.save_path,
+                    "dark_mode": self.dark_mode
+                }, f)
+        except Exception:
+            pass
+    
+    def applyDarkMode(self, enabled):
+        if enabled:
+            self.setStyleSheet("""
+                QWidget {
+                    background-color: #333;
+                    color: #EEE;
+                }
+                QPushButton {
+                    background-color: #555;
+                    color: #EEE;
+                    border: 1px solid #777;
+                    padding: 5px;
+                }
+                QPushButton:hover {
+                    background-color: #666;
+                }
+                QPushButton#download_btn {
+                    background-color: #ff3333;
+                    color: white;
+                    font-weight: bold;
+                }
+                QLineEdit, QComboBox {
+                    background-color: #444;
+                    color: #EEE;
+                    border: 1px solid #777;
+                    padding: 3px;
+                }
+                QProgressBar {
+                    border: 1px solid #777;
+                    text-align: center;
+                }
+                QProgressBar::chunk {
+                    background-color: #5AF;
+                }
+            """)
+        else:
+            # Still keep download button red even in light mode
+            self.setStyleSheet("""
+                QPushButton#download_btn {
+                    background-color: #ff3333;
+                    color: white;
+                    font-weight: bold;
+                }
+            """)
+    
+    def closeEvent(self, event):
+        event.accept()
 
 
-if __name__ == "__main__":
+def main():
     app = QApplication(sys.argv)
     window = HwYtVidGrabber()
     window.show()
     sys.exit(app.exec())
+
+if __name__ == "__main__":
+    main()

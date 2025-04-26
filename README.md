@@ -23,6 +23,10 @@ A simple, efficient YouTube video and audio downloader with an intuitive GUI bui
 - PyQt6
 - yt-dlp
 
+## Portable version
+
+the app is already portable, but if you want to install it:
+
 ## Installation
 
 
@@ -32,6 +36,7 @@ A simple, efficient YouTube video and audio downloader with an intuitive GUI bui
 git clone https://github.com/MalikHw/HwYtVidGrabber.git
 cd HwYtVidGrabber
 ```
+OR COPY THE REPO
 download `HwYtVidGrabber.exe` from [releases](https://github.com/MalikHw/HwYtVidGrabber/releases/) and copy it to the newly made folder, after that
 ```batch
 install.bat
@@ -43,6 +48,7 @@ install.bat
 git clone https://github.com/MalikHw/HwYtVidGrabber.git
 cd HwYtVidGrabber
 ```
+OR COPY THE REPO
 download `HwYtVidGrabber` from [releases](https://github.com/MalikHw/HwYtVidGrabber/releases/) and copy it to the newly made folder, after that
 ```bash
 ./install.sh
@@ -94,3 +100,21 @@ MIT License
 ## Disclaimer
 
 This tool is designed for personal use only. Always respect copyright laws and YouTube's Terms of Service. Download only content that you have permission to download.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+...dont click 10 times on somewhere

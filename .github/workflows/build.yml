@@ -1,5 +1,9 @@
 name: Build Multi-Platform Releases
 
+permissions:
+  contents: write
+  pull-requests: write
+
 on:
   push:
     tags:
@@ -59,7 +63,7 @@ jobs:
         name: macos-app
         path: dist/HwYtVidGrabber-macOS.zip
 
-  build-linux-deb:
+  build-linux-packages:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -73,6 +77,8 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y python3-dev python3-pip build-essential fakeroot devscripts dh-python
+        sudo apt-get install -y qt6-base-dev qt6-tools-dev libqt6gui6 libqt6widgets6 libgl1-mesa-dev
+        sudo apt-get install -y rpm alien
     
     - name: Install Python dependencies
       run: |
@@ -128,14 +134,142 @@ jobs:
         dpkg-deb --build hwytvidgrabber
         mv hwytvidgrabber.deb HwYtVidGrabber.deb
     
-    - name: Upload DEB artifact
+    - name: Create RPM package structure for Fedora/OpenSUSE
+      run: |
+        mkdir -p rpm-build/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+        
+        # Create RPM spec file
+        cat > rpm-build/SPECS/hwytvidgrabber.spec << 'EOF'
+        Name:           hwytvidgrabber
+        Version:        1.0.0
+        Release:        1%{?dist}
+        Summary:        YouTube Video Downloader
+        License:        MIT
+        URL:            https://github.com/MalikHw47/HwYtVidGrabber
+        BuildArch:      x86_64
+        
+        Requires:       python3 python3-qt6
+        
+        %description
+        A PyQt6-based YouTube video downloader application built by MalikHw47.
+        Features a modern GUI for downloading videos from YouTube and other platforms.
+        
+        %prep
+        
+        %build
+        
+        %install
+        mkdir -p %{buildroot}/usr/bin
+        mkdir -p %{buildroot}/usr/share/applications
+        mkdir -p %{buildroot}/usr/share/pixmaps
+        
+        cp %{_topdir}/../../dist/HwYtVidGrabber %{buildroot}/usr/bin/
+        chmod +x %{buildroot}/usr/bin/HwYtVidGrabber
+        
+        cp %{_topdir}/../../icon.png %{buildroot}/usr/share/pixmaps/hwytvidgrabber.png
+        
+        cat > %{buildroot}/usr/share/applications/hwytvidgrabber.desktop << 'DESKTOP'
+        [Desktop Entry]
+        Name=HwYtVidGrabber
+        Comment=YouTube Video Downloader by MalikHw47
+        Exec=/usr/bin/HwYtVidGrabber
+        Icon=hwytvidgrabber
+        Terminal=false
+        Type=Application
+        Categories=AudioVideo;Network;Qt;
+        DESKTOP
+        
+        %files
+        /usr/bin/HwYtVidGrabber
+        /usr/share/applications/hwytvidgrabber.desktop
+        /usr/share/pixmaps/hwytvidgrabber.png
+        
+        %changelog
+        * $(date +'%a %b %d %Y') MalikHw47 <help.malicorporation@gmail.com> - 1.0.0-1
+        - Initial release
+        EOF
+    
+    - name: Build RPM package
+      run: |
+        cd rpm-build
+        rpmbuild --define "_topdir $(pwd)" -bb SPECS/hwytvidgrabber.spec
+        find RPMS -name "*.rpm" -exec cp {} ../HwYtVidGrabber.rpm \;
+    
+    - name: Create Arch Linux PKGBUILD structure
+      run: |
+        mkdir -p arch-build
+        cd arch-build
+        
+        # Create PKGBUILD file
+        cat > PKGBUILD << 'EOF'
+        # Maintainer: MalikHw47 <help.malicorporation@gmail.com>
+        pkgname=hwytvidgrabber
+        pkgver=1.0.0
+        pkgrel=1
+        pkgdesc="YouTube Video Downloader - A PyQt6-based application"
+        arch=('x86_64')
+        url="https://github.com/MalikHw47/HwYtVidGrabber"
+        license=('MIT')
+        depends=('python' 'python-pyqt6')
+        
+        package() {
+            install -Dm755 "../dist/HwYtVidGrabber" "$pkgdir/usr/bin/HwYtVidGrabber"
+            install -Dm644 "../icon.png" "$pkgdir/usr/share/pixmaps/hwytvidgrabber.png"
+            
+            install -d "$pkgdir/usr/share/applications"
+            cat > "$pkgdir/usr/share/applications/hwytvidgrabber.desktop" << 'DESKTOP'
+        [Desktop Entry]
+        Name=HwYtVidGrabber
+        Comment=YouTube Video Downloader by MalikHw47
+        Exec=/usr/bin/HwYtVidGrabber
+        Icon=hwytvidgrabber
+        Terminal=false
+        Type=Application
+        Categories=AudioVideo;Network;Qt;
+        DESKTOP
+        }
+        EOF
+    
+    - name: Install Arch Linux tools and build package
+      run: |
+        # Install arch tools
+        wget -O archlinux-keyring.deb https://mirrors.kernel.org/ubuntu/pool/universe/a/archlinux-keyring/archlinux-keyring_20230918-1_all.deb || true
+        sudo apt-get install -y binutils fakeroot
+        
+        # Create a simple tar.xz package (Arch-like structure)
+        cd arch-build
+        mkdir -p pkg/usr/bin pkg/usr/share/{applications,pixmaps}
+        
+        cp ../dist/HwYtVidGrabber pkg/usr/bin/
+        chmod +x pkg/usr/bin/HwYtVidGrabber
+        cp ../icon.png pkg/usr/share/pixmaps/hwytvidgrabber.png
+        
+        cat > pkg/usr/share/applications/hwytvidgrabber.desktop << 'EOF'
+        [Desktop Entry]
+        Name=HwYtVidGrabber
+        Comment=YouTube Video Downloader by MalikHw47
+        Exec=/usr/bin/HwYtVidGrabber
+        Icon=hwytvidgrabber
+        Terminal=false
+        Type=Application
+        Categories=AudioVideo;Network;Qt;
+        EOF
+        
+        # Create Arch-style package
+        cd pkg
+        tar -czf ../../HwYtVidGrabber-arch.tar.gz *
+    
+    - name: Upload Linux packages artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: linux-deb
-        path: HwYtVidGrabber.deb
+        name: linux-packages
+        path: |
+          HwYtVidGrabber.deb
+          HwYtVidGrabber.rpm
+          HwYtVidGrabber-arch.tar.gz
 
   create-release:
-    needs: [build-windows, build-macos, build-linux-deb]
+    needs: [build-windows, build-macos, build-linux-packages]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
@@ -148,7 +282,9 @@ jobs:
         files: |
           windows-exe/HwYtVidGrabber.exe
           macos-app/HwYtVidGrabber-macOS.zip
-          linux-deb/HwYtVidGrabber.deb
+          linux-packages/HwYtVidGrabber.deb
+          linux-packages/HwYtVidGrabber.rpm
+          linux-packages/HwYtVidGrabber-arch.tar.gz
         draft: false
         prerelease: false
         body: |
@@ -159,7 +295,9 @@ jobs:
           ## Downloads:
           - **Windows**: HwYtVidGrabber.exe
           - **macOS**: HwYtVidGrabber-macOS.zip (extract and run the .app)
-          - **Linux**: HwYtVidGrabber.deb (install with `sudo dpkg -i HwYtVidGrabber.deb`)
+          - **Ubuntu/Debian**: HwYtVidGrabber.deb (install with `sudo dpkg -i HwYtVidGrabber.deb`)
+          - **Fedora/RHEL/CentOS**: HwYtVidGrabber.rpm (install with `sudo rpm -i HwYtVidGrabber.rpm`)
+          - **Arch Linux**: HwYtVidGrabber-arch.tar.gz (extract to / as root or use `sudo tar -xzf HwYtVidGrabber-arch.tar.gz -C /`)
           
           ## Features:
           - YouTube video downloading

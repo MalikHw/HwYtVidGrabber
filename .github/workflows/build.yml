@@ -20,13 +20,11 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install PyQt6 yt-dlp pyinstaller
-        # Add any other dependencies your app needs
-        # pip install requests beautifulsoup4 etc.
+        pip install -r requirements.txt
     
     - name: Build Windows executable
       run: |
-        pyinstaller --onefile --windowed --name HwYtVidGrabber HwYtVidGrabber.py
+        pyinstaller HwYtVidGrabber.spec
     
     - name: Upload Windows artifact
       uses: actions/upload-artifact@v4
@@ -47,23 +45,19 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install PyQt6 yt-dlp pyinstaller py2app
-        # Add any other dependencies your app needs
+        pip install -r requirements.txt
     
     - name: Build macOS app
       run: |
-        # Using PyInstaller for macOS
-        pyinstaller --onefile --windowed --name HwYtVidGrabber HwYtVidGrabber.py
-        
-        # Create DMG (optional, requires create-dmg)
-        # brew install create-dmg
-        # create-dmg --volname "HwYtVidGrabber" --window-size 600 400 --icon-size 100 --app-drop-link 450 200 HwYtVidGrabber.dmg dist/HwYtVidGrabber.app
+        pyinstaller HwYtVidGrabber.spec
+        # Create a zip of the app bundle for easier distribution
+        cd dist && zip -r HwYtVidGrabber-macOS.zip HwYtVidGrabber.app
     
     - name: Upload macOS artifact
       uses: actions/upload-artifact@v4
       with:
         name: macos-app
-        path: dist/HwYtVidGrabber
+        path: dist/HwYtVidGrabber-macOS.zip
 
   build-linux-deb:
     runs-on: ubuntu-latest
@@ -83,12 +77,11 @@ jobs:
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install PyQt6 yt-dlp pyinstaller
-        # Add any other dependencies your app needs
+        pip install -r requirements.txt
     
     - name: Build Linux executable
       run: |
-        pyinstaller --onefile --name HwYtVidGrabber HwYtVidGrabber.py
+        pyinstaller HwYtVidGrabber.spec
     
     - name: Create DEB package structure
       run: |
@@ -101,6 +94,9 @@ jobs:
         cp dist/HwYtVidGrabber hwytvidgrabber/usr/bin/
         chmod +x hwytvidgrabber/usr/bin/HwYtVidGrabber
         
+        # Copy icon
+        cp icon.png hwytvidgrabber/usr/share/pixmaps/hwytvidgrabber.png
+        
         # Create control file
         cat > hwytvidgrabber/DEBIAN/control << EOF
         Package: hwytvidgrabber
@@ -108,9 +104,10 @@ jobs:
         Section: utils
         Priority: optional
         Architecture: amd64
-        Maintainer: Your Name <your.email@example.com>
+        Maintainer: MalikHw47 <help.malicorporation@gmail.com>
         Description: HwYtVidGrabber - YouTube Video Downloader
-         A PyQt6-based YouTube video downloader application.
+         A PyQt6-based YouTube video downloader application built by MalikHw47.
+         Features a modern GUI for downloading videos from YouTube and other platforms.
         Depends: python3, python3-pyqt6
         EOF
         
@@ -118,12 +115,12 @@ jobs:
         cat > hwytvidgrabber/usr/share/applications/hwytvidgrabber.desktop << EOF
         [Desktop Entry]
         Name=HwYtVidGrabber
-        Comment=YouTube Video Downloader
+        Comment=YouTube Video Downloader by MalikHw47
         Exec=/usr/bin/HwYtVidGrabber
         Icon=hwytvidgrabber
         Terminal=false
         Type=Application
-        Categories=AudioVideo;Network;
+        Categories=AudioVideo;Network;Qt;
         EOF
     
     - name: Build DEB package
@@ -150,9 +147,23 @@ jobs:
       with:
         files: |
           windows-exe/HwYtVidGrabber.exe
-          macos-app/HwYtVidGrabber
+          macos-app/HwYtVidGrabber-macOS.zip
           linux-deb/HwYtVidGrabber.deb
         draft: false
         prerelease: false
+        body: |
+          # HwYtVidGrabber Release
+          
+          Created by MalikHw47
+          
+          ## Downloads:
+          - **Windows**: HwYtVidGrabber.exe
+          - **macOS**: HwYtVidGrabber-macOS.zip (extract and run the .app)
+          - **Linux**: HwYtVidGrabber.deb (install with `sudo dpkg -i HwYtVidGrabber.deb`)
+          
+          ## Features:
+          - YouTube video downloading
+          - Modern PyQt6 interface
+          - Cross-platform support
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

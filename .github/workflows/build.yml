@@ -24,6 +24,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
+        pip install pyinstaller
         pip install -r requirements.txt
     
     - name: Build Windows executable
@@ -49,13 +50,14 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
+        pip install pyinstaller
         pip install -r requirements.txt
     
     - name: Build macOS app
       run: |
         pyinstaller HwYtVidGrabber.spec
-        # Create a zip of the app bundle for easier distribution
-        cd dist && zip -r HwYtVidGrabber-macOS.zip HwYtVidGrabber.app
+        # Use ditto to properly preserve extended attributes and app bundle structure
+        cd dist && ditto -c -k --sequesterRsrc --keepParent HwYtVidGrabber.app HwYtVidGrabber-macOS.zip
     
     - name: Upload macOS artifact
       uses: actions/upload-artifact@v4
@@ -83,6 +85,7 @@ jobs:
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
+        pip install pyinstaller
         pip install -r requirements.txt
     
     - name: Build Linux executable
@@ -104,8 +107,9 @@ jobs:
         if [ -f icon.png ]; then
           cp icon.png hwytvidgrabber/usr/share/pixmaps/hwytvidgrabber.png
         else
-          # Create a simple placeholder icon
-          convert -size 64x64 xc:blue hwytvidgrabber/usr/share/pixmaps/hwytvidgrabber.png || echo "No icon available"
+          # Try to install imagemagick and create placeholder, or skip gracefully
+          sudo apt-get install -y imagemagick || echo "Skipping placeholder icon"
+          convert -size 64x64 xc:blue hwytvidgrabber/usr/share/pixmaps/hwytvidgrabber.png 2>/dev/null || echo "No icon available"
         fi
         
         # Create control file
@@ -171,60 +175,19 @@ jobs:
         cd linux-binary
         zip -r ../hwytvidgrabber-linux-binary.zip *
     
-    - name: Create Arch Linux PKGBUILD structure
+    - name: Create Arch-like package structure
       run: |
-        mkdir -p arch-build
-        cd arch-build
+        mkdir -p arch-build/pkg/usr/bin arch-build/pkg/usr/share/{applications,pixmaps}
         
-        # Create PKGBUILD file
-        cat > PKGBUILD << 'EOF'
-        # Maintainer: MalikHw47 <help.malicorporation@gmail.com>
-        pkgname=hwytvidgrabber
-        pkgver=1.0.0
-        pkgrel=1
-        pkgdesc="YouTube Video Downloader - A PyQt6-based application"
-        arch=('x86_64')
-        url="https://github.com/MalikHw47/HwYtVidGrabber"
-        license=('MIT')
-        depends=('python' 'python-pyqt6')
-        
-        package() {
-            install -Dm755 "../dist/HwYtVidGrabber" "$pkgdir/usr/bin/HwYtVidGrabber"
-            
-            # Install icon if it exists
-            if [ -f "../icon.png" ]; then
-                install -Dm644 "../icon.png" "$pkgdir/usr/share/pixmaps/hwytvidgrabber.png"
-            fi
-            
-            install -d "$pkgdir/usr/share/applications"
-            cat > "$pkgdir/usr/share/applications/hwytvidgrabber.desktop" << 'DESKTOP'
-        [Desktop Entry]
-        Name=HwYtVidGrabber
-        Comment=YouTube Video Downloader by MalikHw47
-        Exec=/usr/bin/HwYtVidGrabber
-        Icon=hwytvidgrabber
-        Terminal=false
-        Type=Application
-        Categories=AudioVideo;Network;Qt;
-        DESKTOP
-        }
-        EOF
-    
-    - name: Install Arch Linux tools and build package
-      run: |
-        # Create a simple tar.xz package (Arch-like structure)
-        cd arch-build
-        mkdir -p pkg/usr/bin pkg/usr/share/{applications,pixmaps}
-        
-        cp ../dist/HwYtVidGrabber pkg/usr/bin/
-        chmod +x pkg/usr/bin/HwYtVidGrabber
+        cp dist/HwYtVidGrabber arch-build/pkg/usr/bin/
+        chmod +x arch-build/pkg/usr/bin/HwYtVidGrabber
         
         # Copy icon if it exists
-        if [ -f ../icon.png ]; then
-          cp ../icon.png pkg/usr/share/pixmaps/hwytvidgrabber.png
+        if [ -f icon.png ]; then
+          cp icon.png arch-build/pkg/usr/share/pixmaps/hwytvidgrabber.png
         fi
         
-        cat > pkg/usr/share/applications/hwytvidgrabber.desktop << 'EOF'
+        cat > arch-build/pkg/usr/share/applications/hwytvidgrabber.desktop << 'EOF'
         [Desktop Entry]
         Name=HwYtVidGrabber
         Comment=YouTube Video Downloader by MalikHw47
@@ -235,9 +198,9 @@ jobs:
         Categories=AudioVideo;Network;Qt;
         EOF
         
-        # Create Arch-style package
-        cd pkg
-        tar -czf ../../HwYtVidGrabber-arch.tar.gz *
+        # Create Arch-like package (not a real pacman package)
+        cd arch-build/pkg
+        tar -czf ../../HwYtVidGrabber-archlike.tar.gz *
     
     - name: Upload Linux packages artifacts
       uses: actions/upload-artifact@v4
@@ -246,7 +209,7 @@ jobs:
         path: |
           HwYtVidGrabber.deb
           hwytvidgrabber-linux-binary.zip
-          HwYtVidGrabber-arch.tar.gz
+          HwYtVidGrabber-archlike.tar.gz
 
   create-release:
     needs: [build-windows, build-macos, build-linux-packages]
@@ -264,7 +227,7 @@ jobs:
           macos-app/HwYtVidGrabber-macOS.zip
           linux-packages/HwYtVidGrabber.deb
           linux-packages/hwytvidgrabber-linux-binary.zip
-          linux-packages/HwYtVidGrabber-arch.tar.gz
+          linux-packages/HwYtVidGrabber-archlike.tar.gz
         draft: false
         prerelease: false
         body: |
@@ -277,7 +240,7 @@ jobs:
           - **macOS**: HwYtVidGrabber-macOS.zip (extract and run the .app)
           - **Ubuntu/Debian**: HwYtVidGrabber.deb (install with `sudo dpkg -i HwYtVidGrabber.deb`)
           - **Linux Binary**: hwytvidgrabber-linux-binary.zip (extract and run `./HwYtVidGrabber`)
-          - **Arch Linux**: HwYtVidGrabber-arch.tar.gz (extract to / as root or use `sudo tar -xzf HwYtVidGrabber-arch.tar.gz -C /`)
+          - **Arch Linux (manual install)**: Extract to `/usr/` or run directly. Not a pacman package.
           
           ## Features:
           - YouTube video downloading

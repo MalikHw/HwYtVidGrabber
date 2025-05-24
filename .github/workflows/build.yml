@@ -100,8 +100,13 @@ jobs:
         cp dist/HwYtVidGrabber hwytvidgrabber/usr/bin/
         chmod +x hwytvidgrabber/usr/bin/HwYtVidGrabber
         
-        # Copy icon
-        cp icon.png hwytvidgrabber/usr/share/pixmaps/hwytvidgrabber.png
+        # Copy icon (create a dummy one if it doesn't exist)
+        if [ -f icon.png ]; then
+          cp icon.png hwytvidgrabber/usr/share/pixmaps/hwytvidgrabber.png
+        else
+          # Create a simple placeholder icon
+          convert -size 64x64 xc:blue hwytvidgrabber/usr/share/pixmaps/hwytvidgrabber.png || echo "No icon available"
+        fi
         
         # Create control file
         cat > hwytvidgrabber/DEBIAN/control << EOF
@@ -138,8 +143,11 @@ jobs:
       run: |
         mkdir -p rpm-build/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
         
+        # Get current date for changelog
+        CURRENT_DATE=$(date +'%a %b %d %Y')
+        
         # Create RPM spec file
-        cat > rpm-build/SPECS/hwytvidgrabber.spec << 'EOF'
+        cat > rpm-build/SPECS/hwytvidgrabber.spec << EOF
         Name:           hwytvidgrabber
         Version:        1.0.0
         Release:        1%{?dist}
@@ -166,7 +174,10 @@ jobs:
         cp %{_topdir}/../../dist/HwYtVidGrabber %{buildroot}/usr/bin/
         chmod +x %{buildroot}/usr/bin/HwYtVidGrabber
         
-        cp %{_topdir}/../../icon.png %{buildroot}/usr/share/pixmaps/hwytvidgrabber.png
+        # Copy icon if it exists
+        if [ -f %{_topdir}/../../icon.png ]; then
+          cp %{_topdir}/../../icon.png %{buildroot}/usr/share/pixmaps/hwytvidgrabber.png
+        fi
         
         cat > %{buildroot}/usr/share/applications/hwytvidgrabber.desktop << 'DESKTOP'
         [Desktop Entry]
@@ -182,10 +193,12 @@ jobs:
         %files
         /usr/bin/HwYtVidGrabber
         /usr/share/applications/hwytvidgrabber.desktop
+        %if 0%{?fedora} || 0%{?rhel} >= 8
         /usr/share/pixmaps/hwytvidgrabber.png
+        %endif
         
         %changelog
-        * $(date +'%a %b %d %Y') MalikHw47 <help.malicorporation@gmail.com> - 1.0.0-1
+        * $CURRENT_DATE MalikHw47 <help.malicorporation@gmail.com> - 1.0.0-1
         - Initial release
         EOF
     
@@ -214,7 +227,11 @@ jobs:
         
         package() {
             install -Dm755 "../dist/HwYtVidGrabber" "$pkgdir/usr/bin/HwYtVidGrabber"
-            install -Dm644 "../icon.png" "$pkgdir/usr/share/pixmaps/hwytvidgrabber.png"
+            
+            # Install icon if it exists
+            if [ -f "../icon.png" ]; then
+                install -Dm644 "../icon.png" "$pkgdir/usr/share/pixmaps/hwytvidgrabber.png"
+            fi
             
             install -d "$pkgdir/usr/share/applications"
             cat > "$pkgdir/usr/share/applications/hwytvidgrabber.desktop" << 'DESKTOP'
@@ -232,17 +249,17 @@ jobs:
     
     - name: Install Arch Linux tools and build package
       run: |
-        # Install arch tools
-        wget -O archlinux-keyring.deb https://mirrors.kernel.org/ubuntu/pool/universe/a/archlinux-keyring/archlinux-keyring_20230918-1_all.deb || true
-        sudo apt-get install -y binutils fakeroot
-        
         # Create a simple tar.xz package (Arch-like structure)
         cd arch-build
         mkdir -p pkg/usr/bin pkg/usr/share/{applications,pixmaps}
         
         cp ../dist/HwYtVidGrabber pkg/usr/bin/
         chmod +x pkg/usr/bin/HwYtVidGrabber
-        cp ../icon.png pkg/usr/share/pixmaps/hwytvidgrabber.png
+        
+        # Copy icon if it exists
+        if [ -f ../icon.png ]; then
+          cp ../icon.png pkg/usr/share/pixmaps/hwytvidgrabber.png
+        fi
         
         cat > pkg/usr/share/applications/hwytvidgrabber.desktop << 'EOF'
         [Desktop Entry]

@@ -62,6 +62,7 @@ jobs:
         
         # Move executable
         mv dist/HwYtVidGrabber HwYtVidGrabber.app/Contents/MacOS/
+        chmod +x HwYtVidGrabber.app/Contents/MacOS/HwYtVidGrabber
         
         # Copy icon
         cp icon.png HwYtVidGrabber.app/Contents/Resources/icon.png
@@ -94,11 +95,33 @@ jobs:
         </plist>
         EOF
     
+    - name: Create DMG
+      run: |
+        # Create a temporary directory for the DMG contents
+        mkdir -p dmg-contents
+        
+        # Copy the .app bundle to the DMG contents
+        cp -R HwYtVidGrabber.app dmg-contents/
+        
+        # Create Applications symlink for easy installation
+        ln -s /Applications dmg-contents/Applications
+        
+        # Create the DMG using hdiutil
+        hdiutil create -volname "HwYtVidGrabber" \
+                       -srcfolder dmg-contents \
+                       -ov \
+                       -format UDZO \
+                       -imagekey zlib-level=9 \
+                       HwYtVidGrabber.dmg
+        
+        # Verify the DMG was created
+        ls -la HwYtVidGrabber.dmg
+    
     - name: Upload macOS artifact
       uses: actions/upload-artifact@v4
       with:
-        name: macos-app
-        path: HwYtVidGrabber.app
+        name: macos-dmg
+        path: HwYtVidGrabber.dmg
 
   build-linux-packages:
     runs-on: ubuntu-24.04
@@ -310,7 +333,7 @@ jobs:
       with:
         files: |
           windows-exe/HwYtVidGrabber.exe
-          macos-app/HwYtVidGrabber.app
+          macos-dmg/HwYtVidGrabber.dmg
           linux-deb/HwYtVidGrabber.deb
           linux-arch/HwYtVidGrabber.pkg.tar.gz
           linux-appimage/HwYtVidGrabber.AppImage

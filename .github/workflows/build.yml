@@ -27,9 +27,31 @@ jobs:
         pip install pyinstaller
         pip install -r requirements.txt
     
+    - name: Download and extract FFmpeg
+      shell: powershell
+      run: |
+        # Download FFmpeg essentials
+        Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-git-essentials.7z" -OutFile "ffmpeg.7z"
+        
+        # Extract using 7zip (available on GitHub Actions Windows runners)
+        7z x ffmpeg.7z
+        
+        # Find ffmpeg.exe in the extracted folder
+        $ffmpegPath = Get-ChildItem -Path . -Name "ffmpeg.exe" -Recurse | Select-Object -First 1
+        if ($ffmpegPath) {
+          $fullPath = Get-ChildItem -Path . -Name "ffmpeg.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
+          Write-Host "Found ffmpeg.exe at: $fullPath"
+          # Copy to root directory for easier access
+          Copy-Item $fullPath -Destination ".\ffmpeg.exe"
+          Write-Host "Copied ffmpeg.exe to root directory"
+        } else {
+          Write-Error "ffmpeg.exe not found in extracted files"
+          exit 1
+        }
+    
     - name: Build Windows executable
       run: |
-        pyinstaller --no-console --onefile --icon=icon.ico --add-data="icon.png;." --add-data="icon.ico;." HwYtVidGrabber.py
+        pyinstaller --no-console --onefile --icon=icon.ico --add-data="icon.png;." --add-data="icon.ico;." --add-binary="ffmpeg.exe;." HwYtVidGrabber.py
     
     - name: Upload Windows artifact
       uses: actions/upload-artifact@v4
@@ -55,7 +77,7 @@ jobs:
     
     - name: Build macOS executable
       run: |
-        pyinstaller --no-console --onefile --icon=icon.ico --add-data="icon.png:." --add-data="icon.ico:." HwYtVidGrabber.py
+        pyinstaller --windowed --onefile --icon=icon.ico --add-data="icon.png:." --add-data="icon.ico:." HwYtVidGrabber.py
         mv dist/HwYtVidGrabber dist/HwYtVidGrabber-macOS
     
     - name: Upload macOS artifact
@@ -64,7 +86,7 @@ jobs:
         name: macos-app
         path: dist/HwYtVidGrabber-macOS
 
-  build-linux:
+  build-linux-packages:
     runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v4
@@ -74,23 +96,22 @@ jobs:
       with:
         python-version: '3.11'
     
-    - name: Install system dependencies and Qt6
+    - name: Install system dependencies and packaging tools
       run: |
         sudo apt-get update
         sudo apt-get install -y python3-dev python3-pip build-essential
-        # Install complete Qt6 with all platform plugins and dependencies
+        # Install Qt6 dependencies
         sudo apt-get install -y qt6-base-dev qt6-tools-dev libqt6gui6 libqt6widgets6 libqt6core6
         sudo apt-get install -y qt6-qpa-plugins libqt6dbus6 libqt6network6 libqt6svg6
-        # Install all XCB dependencies to bundle them
-        sudo apt-get install -y libxcb-cursor0 libxcb-cursor-dev libxcb1-dev libxcb-util1
-        sudo apt-get install -y libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0
-        sudo apt-get install -y libxcb-render-util0 libxcb-shape0 libxcb-xfixes0 libxcb-xinerama0
-        sudo apt-get install -y libxcb-xkb1 libxkbcommon-x11-0 libxkbcommon0 libxkbcommon-dev
-        # Additional Qt platform support  
-        sudo apt-get install -y libqt6waylandclient6 libqt6waylandcompositor6
-        # OpenGL support
-        sudo apt-get install -y libgl1-mesa-dev libglu1-mesa-dev mesa-common-dev
-        sudo apt-get install -y patchelf
+        # Install packaging tools
+        sudo apt-get install -y debhelper dh-python devscripts fakeroot
+        sudo apt-get install -y alien rpm2cpio cpio
+        # Install AppImage tools
+        sudo apt-get install -y zsync desktop-file-utils
+        # Download appimagetool
+        wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+        chmod +x appimagetool-x86_64.AppImage
+        sudo mv appimagetool-x86_64.AppImage /usr/local/bin/appimagetool
     
     - name: Install Python dependencies
       run: |
@@ -98,151 +119,200 @@ jobs:
         pip install pyinstaller
         pip install -r requirements.txt
     
-    - name: Create comprehensive PyInstaller spec for Linux
+    - name: Build base application
       run: |
-        cat > HwYtVidGrabber-linux.spec << 'EOF'
-        # -*- mode: python ; coding: utf-8 -*-
-        import sys
-        import os
-        import glob
-        from PyInstaller.utils.hooks import collect_all, collect_submodules
-
-        block_cipher = None
-
-        # Collect all PyQt6 data and binaries
-        datas = []
-        binaries = []
-        hiddenimports = []
-
-        # Collect PyQt6 completely
-        tmp_ret = collect_all('PyQt6')
-        datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-
-        # Collect yt-dlp completely  
-        tmp_ret = collect_all('yt_dlp')
-        datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-
-        # Find and bundle ALL Qt6 platform plugins and libraries
-        qt6_base_paths = [
-            '/usr/lib/x86_64-linux-gnu/qt6',
-            '/usr/lib/qt6',
-            '/usr/share/qt6'
-        ]
-
-        for qt_path in qt6_base_paths:
-            if os.path.exists(qt_path):
-                # Platform plugins (CRITICAL for Qt to work)
-                platforms_path = os.path.join(qt_path, 'plugins', 'platforms')
-                if os.path.exists(platforms_path):
-                    for plugin in glob.glob(f'{platforms_path}/*'):
-                        if os.path.isfile(plugin):
-                            binaries.append((plugin, 'PyQt6/Qt6/plugins/platforms/'))
-                
-                # Platform themes
-                themes_path = os.path.join(qt_path, 'plugins', 'platformthemes')
-                if os.path.exists(themes_path):
-                    for plugin in glob.glob(f'{themes_path}/*'):
-                        if os.path.isfile(plugin):
-                            binaries.append((plugin, 'PyQt6/Qt6/plugins/platformthemes/'))
-                
-                # XCB GL integrations
-                xcb_path = os.path.join(qt_path, 'plugins', 'xcbglintegrations')
-                if os.path.exists(xcb_path):
-                    for plugin in glob.glob(f'{xcb_path}/*'):
-                        if os.path.isfile(plugin):
-                            binaries.append((plugin, 'PyQt6/Qt6/plugins/xcbglintegrations/'))
-
-        # Bundle ALL XCB and cursor libraries
-        lib_paths = ['/usr/lib/x86_64-linux-gnu', '/usr/lib', '/lib/x86_64-linux-gnu']
-        xcb_libs = [
-            'libxcb-cursor.so*', 'libxcb.so*', 'libxcb-util.so*',
-            'libxcb-icccm.so*', 'libxcb-image.so*', 'libxcb-keysyms.so*',
-            'libxcb-randr.so*', 'libxcb-render-util.so*', 'libxcb-shape.so*',
-            'libxcb-xfixes.so*', 'libxcb-xinerama.so*', 'libxcb-xkb.so*',
-            'libXcursor.so*', 'libxkbcommon.so*', 'libxkbcommon-x11.so*'
-        ]
-
-        for lib_path in lib_paths:
-            if os.path.exists(lib_path):
-                for lib_pattern in xcb_libs:
-                    for lib_file in glob.glob(os.path.join(lib_path, lib_pattern)):
-                        if os.path.isfile(lib_file):
-                            binaries.append((lib_file, '.'))
-
-        a = Analysis(
-            ['HwYtVidGrabber.py'],
-            pathex=[],
-            binaries=binaries,
-            datas=datas + [
-                ('icon.png', '.'),
-                ('icon.ico', '.'),
-            ],
-            hiddenimports=hiddenimports + [
-                'PyQt6.QtCore',
-                'PyQt6.QtGui', 
-                'PyQt6.QtWidgets',
-                'PyQt6.QtNetwork',
-                'yt_dlp',
-                'yt_dlp.extractor',
-                'yt_dlp.postprocessor',
-            ],
-            hookspath=[],
-            hooksconfig={},
-            runtime_hooks=[],
-            excludes=[
-                'tkinter',
-                'matplotlib',
-                'numpy',
-                'scipy',
-            ],
-            win_no_prefer_redirects=False,
-            win_private_assemblies=False,
-            cipher=block_cipher,
-            noarchive=False,
-        )
-
-        pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
-
-        exe = EXE(
-            pyz,
-            a.scripts,
-            a.binaries,
-            a.zipfiles,
-            a.datas,
-            [],
-            name='HwYtVidGrabber',
-            debug=False,
-            bootloader_ignore_signals=False,
-            strip=False,
-            upx=False,
-            upx_exclude=[],
-            runtime_tmpdir=None,
-            console=False,
-            disable_windowed_traceback=False,
-            argv_emulation=False,
-            target_arch=None,
-            codesign_identity=None,
-            entitlements_file=None,
-            icon='icon.ico',
-        )
+        pyinstaller --onefile --windowed --icon=icon.ico --add-data="icon.png:." --add-data="icon.ico:." HwYtVidGrabber.py
+        mkdir -p build-assets
+        cp dist/HwYtVidGrabber build-assets/
+        chmod +x build-assets/HwYtVidGrabber
+    
+    # Build .deb package for Debian/Ubuntu
+    - name: Create DEB package structure
+      run: |
+        mkdir -p deb-package/DEBIAN
+        mkdir -p deb-package/usr/bin
+        mkdir -p deb-package/usr/share/applications
+        mkdir -p deb-package/usr/share/pixmaps
+        mkdir -p deb-package/usr/share/doc/hwytvid-grabber
+        
+        # Copy executable
+        cp build-assets/HwYtVidGrabber deb-package/usr/bin/hwytvid-grabber
+        
+        # Copy icon
+        cp icon.png deb-package/usr/share/pixmaps/hwytvid-grabber.png
+        
+        # Create desktop file
+        cat > deb-package/usr/share/applications/hwytvid-grabber.desktop << 'EOF'
+        [Desktop Entry]
+        Name=HwYtVidGrabber
+        Comment=YouTube Video Downloader
+        Exec=hwytvid-grabber
+        Icon=hwytvid-grabber
+        Terminal=false
+        Type=Application
+        Categories=AudioVideo;Network;
+        StartupWMClass=HwYtVidGrabber
         EOF
+        
+        # Create control file
+        cat > deb-package/DEBIAN/control << 'EOF'
+        Package: hwytvid-grabber
+        Version: 1.3
+        Section: video
+        Priority: optional
+        Architecture: amd64
+        Depends: libqt6core6, libqt6gui6, libqt6widgets6, python3, ffmpeg
+        Maintainer: help.malicorporation@gmail.com
+        Description: YouTube Video Downloader
+         A modern PyQt6-based YouTube video downloader with support for
+         multiple formats and resolutions up to 4K.
+         .
+         Features include:
+          - YouTube video downloading with yt-dlp
+          - Modern PyQt6 interface
+          - Multiple format support (MP4, MP3, muted MP4)
+          - Resolution selection up to 4K
+          - Dark mode support
+        Homepage: https://github.com/MalikHw47/HwYtVidGrabber
+        EOF
+        
+        # Create copyright file
+        cat > deb-package/usr/share/doc/hwytvid-grabber/copyright << 'EOF'
+        Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+        Upstream-Name: HwYtVidGrabber
+        Source: https://github.com/MalikHw47/HwYtVidGrabber
+
+        Files: *
+        Copyright: 2024 MalikHw47
+        License: MIT
+        EOF
+        
+        # Create changelog
+        cat > deb-package/usr/share/doc/hwytvid-grabber/changelog << 'EOF'
+        hwytvid-grabber (1.3) unstable; urgency=medium
+
+          * Release version 1.3
+          * Modern PyQt6 interface
+          * Multiple format support
+          * Cross-platform compatibility
+
+         -- help.malicorporation@gmail.com  $(date -R)
+        EOF
+        
+        gzip deb-package/usr/share/doc/hwytvid-grabber/changelog
+        
+        # Build DEB package
+        dpkg-deb --build deb-package hwytvid-grabber_1.3_amd64.deb
     
-    - name: Build Linux executable with all dependencies bundled
+    # Build Arch Linux package
+    - name: Create Arch Linux package
       run: |
-        pyinstaller HwYtVidGrabber-linux.spec
-        # Set proper permissions and rpath
-        chmod +x dist/HwYtVidGrabber
-        # Use patchelf to ensure the binary can find bundled libraries
-        patchelf --set-rpath '$ORIGIN:$ORIGIN/lib' dist/HwYtVidGrabber 2>/dev/null || true
+        mkdir -p arch-package
+        cd arch-package
+        
+        # Create PKGBUILD
+        cat > PKGBUILD << 'EOF'
+        # Maintainer: MalikHw47 <help.malicorporation@gmail.com>
+        pkgname=hwytvid-grabber
+        pkgver=1.3
+        pkgrel=1
+        pkgdesc="YouTube Video Downloader with PyQt6 interface"
+        arch=('x86_64')
+        url="https://github.com/MalikHw47/HwYtVidGrabber"
+        license=('MIT')
+        depends=('python' 'qt6-base' 'ffmpeg' 'python-pyqt6')
+        source=("hwytvid-grabber::file://../build-assets/HwYtVidGrabber"
+                "hwytvid-grabber.desktop::file://../deb-package/usr/share/applications/hwytvid-grabber.desktop"
+                "hwytvid-grabber.png::file://../icon.png")
+        sha256sums=('SKIP' 'SKIP' 'SKIP')
+
+        package() {
+            install -Dm755 "$srcdir/hwytvid-grabber" "$pkgdir/usr/bin/hwytvid-grabber"
+            install -Dm644 "$srcdir/hwytvid-grabber.desktop" "$pkgdir/usr/share/applications/hwytvid-grabber.desktop"
+            install -Dm644 "$srcdir/hwytvid-grabber.png" "$pkgdir/usr/share/pixmaps/hwytvid-grabber.png"
+        }
+        EOF
+        
+        # Build package (simulate makepkg without actual Arch environment)
+        mkdir -p pkg/usr/bin
+        mkdir -p pkg/usr/share/applications
+        mkdir -p pkg/usr/share/pixmaps
+        
+        cp ../build-assets/HwYtVidGrabber pkg/usr/bin/hwytvid-grabber
+        cp ../deb-package/usr/share/applications/hwytvid-grabber.desktop pkg/usr/share/applications/
+        cp ../icon.png pkg/usr/share/pixmaps/hwytvid-grabber.png
+        
+        # Create .PKGINFO
+        cat > pkg/.PKGINFO << 'EOF'
+        pkgname = hwytvid-grabber
+        pkgbase = hwytvid-grabber
+        pkgver = 1.3-1
+        pkgdesc = YouTube Video Downloader with PyQt6 interface
+        url = https://github.com/MalikHw47/HwYtVidGrabber
+        arch = x86_64
+        license = MIT
+        depend = python
+        depend = qt6-base
+        depend = ffmpeg
+        depend = python-pyqt6
+        EOF
+        
+        # Create package archive
+        cd pkg
+        tar -czf ../hwytvid-grabber-1.3-1-x86_64.pkg.tar.gz .PKGINFO usr/
+        cd ..
+        mv hwytvid-grabber-1.3-1-x86_64.pkg.tar.gz ../
     
-    - name: Upload Linux artifact
+    # Build AppImage
+    - name: Create AppImage
+      run: |
+        # Create AppDir structure
+        mkdir -p AppDir/usr/bin
+        mkdir -p AppDir/usr/share/applications
+        mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+        
+        # Copy files
+        cp build-assets/HwYtVidGrabber AppDir/usr/bin/
+        cp deb-package/usr/share/applications/hwytvid-grabber.desktop AppDir/
+        cp icon.png AppDir/usr/share/icons/hicolor/256x256/apps/hwytvid-grabber.png
+        cp icon.png AppDir/hwytvid-grabber.png
+        
+        # Create AppRun
+        cat > AppDir/AppRun << 'EOF'
+        #!/bin/bash
+        HERE="$(dirname "$(readlink -f "${0}")")"
+        export PATH="${HERE}/usr/bin:${PATH}"
+        export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+        exec "${HERE}/usr/bin/HwYtVidGrabber" "$@"
+        EOF
+        chmod +x AppDir/AppRun
+        
+        # Modify desktop file for AppImage
+        sed -i 's/Exec=hwytvid-grabber/Exec=HwYtVidGrabber/' AppDir/hwytvid-grabber.desktop
+        
+        # Build AppImage
+        ARCH=x86_64 appimagetool AppDir HwYtVidGrabber-1.3-x86_64.AppImage
+    
+    - name: Upload DEB package
       uses: actions/upload-artifact@v4
       with:
-        name: linux-exe
-        path: dist/HwYtVidGrabber
+        name: linux-deb
+        path: hwytvid-grabber_1.3_amd64.deb
+    
+    - name: Upload Arch package
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-arch
+        path: hwytvid-grabber-1.3-1-x86_64.pkg.tar.gz
+    
+    - name: Upload AppImage
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-appimage
+        path: HwYtVidGrabber-1.3-x86_64.AppImage
 
   create-release:
-    needs: [build-windows, build-macos, build-linux]
+    needs: [build-windows, build-macos, build-linux-packages]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
@@ -255,40 +325,10 @@ jobs:
         files: |
           windows-exe/HwYtVidGrabber.exe
           macos-app/HwYtVidGrabber-macOS
-          linux-exe/HwYtVidGrabber
+          linux-deb/hwytvid-grabber_1.3_amd64.deb
+          linux-arch/hwytvid-grabber-1.3-1-x86_64.pkg.tar.gz
+          linux-appimage/HwYtVidGrabber-1.3-x86_64.AppImage
         draft: false
         prerelease: false
-        body: |
-          # HwYtVidGrabber Release
-          
-          Created by MalikHw47
-          
-          ## Downloads:
-          
-          ### Windows
-          - **HwYtVidGrabber.exe** - Standalone Windows executable
-          
-          ### macOS  
-          - **HwYtVidGrabber-macOS** - Standalone macOS executable
-            ```bash
-            chmod +x HwYtVidGrabber-macOS
-            ./HwYtVidGrabber-macOS
-            ```
-          
-          ### Linux
-          - **HwYtVidGrabber** - Standalone Linux executable (all dependencies bundled)
-            ```bash
-            chmod +x HwYtVidGrabber
-            ./HwYtVidGrabber
-            ```
-          
-          ## Features:
-          - YouTube video downloading with yt-dlp
-          - Modern PyQt6 interface
-          - Multiple format support (MP4, MP3, muted MP4)
-          - Resolution selection up to 4K
-          - Cross-platform support
-          - Dark mode support
-          - **All Qt dependencies bundled - no additional installation required**
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

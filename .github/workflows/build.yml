@@ -30,22 +30,22 @@ jobs:
     - name: Download and extract FFmpeg
       shell: powershell
       run: |
-        # Download FFmpeg essentials
-        Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-git-essentials.7z" -OutFile "ffmpeg.7z"
+        # Download FFmpeg essentials (using a more reliable source)
+        $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+        Invoke-WebRequest -Uri $url -OutFile "ffmpeg.zip"
         
-        # Extract using 7zip (available on GitHub Actions Windows runners)
-        7z x ffmpeg.7z
+        # Extract using PowerShell
+        Expand-Archive -Path "ffmpeg.zip" -DestinationPath "ffmpeg-temp"
         
-        # Find ffmpeg.exe in the extracted folder
-        $ffmpegPath = Get-ChildItem -Path . -Name "ffmpeg.exe" -Recurse | Select-Object -First 1
-        if ($ffmpegPath) {
-          $fullPath = Get-ChildItem -Path . -Name "ffmpeg.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
-          Write-Host "Found ffmpeg.exe at: $fullPath"
-          # Copy to root directory for easier access
-          Copy-Item $fullPath -Destination ".\ffmpeg.exe"
-          Write-Host "Copied ffmpeg.exe to root directory"
+        # Find and copy ffmpeg.exe
+        $ffmpegExe = Get-ChildItem -Path "ffmpeg-temp" -Name "ffmpeg.exe" -Recurse | Select-Object -First 1
+        if ($ffmpegExe) {
+          $ffmpegPath = Get-ChildItem -Path "ffmpeg-temp" -Name "ffmpeg.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
+          Write-Host "Found ffmpeg.exe at: $ffmpegPath"
+          Copy-Item $ffmpegPath -Destination ".\ffmpeg.exe"
+          Write-Host "FFmpeg copied successfully"
         } else {
-          Write-Error "ffmpeg.exe not found in extracted files"
+          Write-Error "ffmpeg.exe not found"
           exit 1
         }
     
@@ -87,7 +87,7 @@ jobs:
         path: dist/HwYtVidGrabber-macOS
 
   build-linux-packages:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     steps:
     - uses: actions/checkout@v4
     
@@ -107,11 +107,7 @@ jobs:
         sudo apt-get install -y debhelper dh-python devscripts fakeroot
         sudo apt-get install -y alien rpm2cpio cpio
         # Install AppImage tools
-        sudo apt-get install -y zsync desktop-file-utils
-        # Download appimagetool
-        wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-        chmod +x appimagetool-x86_64.AppImage
-        sudo mv appimagetool-x86_64.AppImage /usr/local/bin/appimagetool
+        sudo apt-get install -y zsync desktop-file-utils file
     
     - name: Install Python dependencies
       run: |
@@ -202,48 +198,22 @@ jobs:
         gzip deb-package/usr/share/doc/hwytvid-grabber/changelog
         
         # Build DEB package
-        dpkg-deb --build deb-package hwytvid-grabber_1.3_amd64.deb
+        dpkg-deb --build deb-package HwYtVidGrabber.deb
     
     # Build Arch Linux package
     - name: Create Arch Linux package
       run: |
-        mkdir -p arch-package
-        cd arch-package
+        mkdir -p arch-package/pkg/usr/bin
+        mkdir -p arch-package/pkg/usr/share/applications
+        mkdir -p arch-package/pkg/usr/share/pixmaps
         
-        # Create PKGBUILD
-        cat > PKGBUILD << 'EOF'
-        # Maintainer: MalikHw47 <help.malicorporation@gmail.com>
-        pkgname=hwytvid-grabber
-        pkgver=1.3
-        pkgrel=1
-        pkgdesc="YouTube Video Downloader with PyQt6 interface"
-        arch=('x86_64')
-        url="https://github.com/MalikHw47/HwYtVidGrabber"
-        license=('MIT')
-        depends=('python' 'qt6-base' 'ffmpeg' 'python-pyqt6')
-        source=("hwytvid-grabber::file://../build-assets/HwYtVidGrabber"
-                "hwytvid-grabber.desktop::file://../deb-package/usr/share/applications/hwytvid-grabber.desktop"
-                "hwytvid-grabber.png::file://../icon.png")
-        sha256sums=('SKIP' 'SKIP' 'SKIP')
-
-        package() {
-            install -Dm755 "$srcdir/hwytvid-grabber" "$pkgdir/usr/bin/hwytvid-grabber"
-            install -Dm644 "$srcdir/hwytvid-grabber.desktop" "$pkgdir/usr/share/applications/hwytvid-grabber.desktop"
-            install -Dm644 "$srcdir/hwytvid-grabber.png" "$pkgdir/usr/share/pixmaps/hwytvid-grabber.png"
-        }
-        EOF
-        
-        # Build package (simulate makepkg without actual Arch environment)
-        mkdir -p pkg/usr/bin
-        mkdir -p pkg/usr/share/applications
-        mkdir -p pkg/usr/share/pixmaps
-        
-        cp ../build-assets/HwYtVidGrabber pkg/usr/bin/hwytvid-grabber
-        cp ../deb-package/usr/share/applications/hwytvid-grabber.desktop pkg/usr/share/applications/
-        cp ../icon.png pkg/usr/share/pixmaps/hwytvid-grabber.png
+        # Copy files
+        cp build-assets/HwYtVidGrabber arch-package/pkg/usr/bin/hwytvid-grabber
+        cp deb-package/usr/share/applications/hwytvid-grabber.desktop arch-package/pkg/usr/share/applications/
+        cp icon.png arch-package/pkg/usr/share/pixmaps/hwytvid-grabber.png
         
         # Create .PKGINFO
-        cat > pkg/.PKGINFO << 'EOF'
+        cat > arch-package/pkg/.PKGINFO << 'EOF'
         pkgname = hwytvid-grabber
         pkgbase = hwytvid-grabber
         pkgver = 1.3-1
@@ -258,14 +228,16 @@ jobs:
         EOF
         
         # Create package archive
-        cd pkg
-        tar -czf ../hwytvid-grabber-1.3-1-x86_64.pkg.tar.gz .PKGINFO usr/
-        cd ..
-        mv hwytvid-grabber-1.3-1-x86_64.pkg.tar.gz ../
+        cd arch-package/pkg
+        tar -czf ../../HwYtVidGrabber.pkg.tar.gz .PKGINFO usr/
     
-    # Build AppImage
+    # Build AppImage (without FUSE requirement)
     - name: Create AppImage
       run: |
+        # Download appimagetool-x86_64.AppImage
+        wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+        chmod +x appimagetool-x86_64.AppImage
+        
         # Create AppDir structure
         mkdir -p AppDir/usr/bin
         mkdir -p AppDir/usr/share/applications
@@ -290,26 +262,26 @@ jobs:
         # Modify desktop file for AppImage
         sed -i 's/Exec=hwytvid-grabber/Exec=HwYtVidGrabber/' AppDir/hwytvid-grabber.desktop
         
-        # Build AppImage
-        ARCH=x86_64 appimagetool AppDir HwYtVidGrabber-1.3-x86_64.AppImage
+        # Build AppImage without FUSE
+        ARCH=x86_64 ./appimagetool-x86_64.AppImage --appimage-extract-and-run AppDir HwYtVidGrabber.AppImage
     
     - name: Upload DEB package
       uses: actions/upload-artifact@v4
       with:
         name: linux-deb
-        path: hwytvid-grabber_1.3_amd64.deb
+        path: HwYtVidGrabber.deb
     
     - name: Upload Arch package
       uses: actions/upload-artifact@v4
       with:
         name: linux-arch
-        path: hwytvid-grabber-1.3-1-x86_64.pkg.tar.gz
+        path: HwYtVidGrabber.pkg.tar.gz
     
     - name: Upload AppImage
       uses: actions/upload-artifact@v4
       with:
         name: linux-appimage
-        path: HwYtVidGrabber-1.3-x86_64.AppImage
+        path: HwYtVidGrabber.AppImage
 
   create-release:
     needs: [build-windows, build-macos, build-linux-packages]
@@ -325,9 +297,9 @@ jobs:
         files: |
           windows-exe/HwYtVidGrabber.exe
           macos-app/HwYtVidGrabber-macOS
-          linux-deb/hwytvid-grabber_1.3_amd64.deb
-          linux-arch/hwytvid-grabber-1.3-1-x86_64.pkg.tar.gz
-          linux-appimage/HwYtVidGrabber-1.3-x86_64.AppImage
+          linux-deb/HwYtVidGrabber.deb
+          linux-arch/HwYtVidGrabber.pkg.tar.gz
+          linux-appimage/HwYtVidGrabber.AppImage
         draft: false
         prerelease: false
       env:

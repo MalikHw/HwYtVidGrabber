@@ -133,7 +133,7 @@ jobs:
         path: HwYtVidGrabber.dmg
 
   build-linux-appimage:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     
@@ -142,30 +142,29 @@ jobs:
       with:
         python-version: '3.11'
     
-    - name: Install system dependencies and packaging tools
+    - name: Install system dependencies and Qt6
       run: |
         sudo apt-get update
         sudo apt-get install -y python3-dev python3-pip build-essential
-        # Install Qt6 dependencies for building
-        sudo apt-get install -y qt6-base-dev qt6-tools-dev libqt6gui6 libqt6widgets6 libqt6core6
-        sudo apt-get install -y qt6-qpa-plugins libqt6dbus6 libqt6network6 libqt6svg6
+        # Install Qt6 from apt with all plugins and dev tools
+        sudo apt-get install -y pyqt6-dev pyqt6-dev-tools python3-pyqt6
+        sudo apt-get install -y qt6-base-dev qt6-tools-dev qt6-qpa-plugins
+        sudo apt-get install -y libqt6gui6 libqt6widgets6 libqt6core6 libqt6dbus6 libqt6network6 libqt6svg6
+        # Install xcb and platform libraries
+        sudo apt-get install -y libxcb1 libxcb-xinerama0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-sync1 libxcb-xfixes0 libxcb-xkb1
         # Install packaging tools
-        sudo apt-get install -y debhelper dh-python devscripts fakeroot
-        sudo apt-get install -y alien rpm2cpio cpio
-        # Install AppImage tools
-        sudo apt-get install -y zsync desktop-file-utils file
-        # Install library copying tools
-        sudo apt-get install -y patchelf
+        sudo apt-get install -y debhelper dh-python devscripts fakeroot alien rpm2cpio cpio
+        sudo apt-get install -y zsync desktop-file-utils file patchelf
     
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller
+        pip install pyinstaller PyQt6 PyQt6-Qt6 yt-dlp requests
         pip install -r requirements.txt
     
     - name: Build fully bundled Linux AppImage
       run: |
-        # Build with only required Qt6 libraries bundled
+        # Build with PyInstaller
         pyinstaller --onefile --windowed --icon=icon.ico \
         --add-data="icon.png:." --add-data="icon.ico:." \
         --collect-submodules PyQt6.QtCore \
@@ -176,43 +175,77 @@ jobs:
         --name=HwYtVidGrabber \
         HwYtVidGrabber.py
         
-        # Download appimagetool-x86_64.AppImage
+        # Download appimagetool
         wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
         chmod +x appimagetool-x86_64.AppImage
         
         # Create AppDir structure
         mkdir -p AppDir/usr/bin
         mkdir -p AppDir/usr/lib
+        mkdir -p AppDir/usr/plugins/platforms
+        mkdir -p AppDir/usr/plugins/platformthemes
+        mkdir -p AppDir/usr/plugins/xcbglintegrations
         mkdir -p AppDir/usr/share/applications
         mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
         
         # Copy the bundled executable
         cp dist/HwYtVidGrabber AppDir/usr/bin/
         
-        # Copy all Qt6 libraries that the executable depends on
-        # This ensures complete self-containment
+        # Find and copy ALL Qt6 libraries that the executable depends on
+        echo "Copying Qt6 libraries..."
         ldd dist/HwYtVidGrabber | grep -E "(libQt6|libqt6)" | awk '{print $3}' | while read lib; do
             if [ -f "$lib" ]; then
+                echo "Copying Qt6 lib: $lib"
                 cp "$lib" AppDir/usr/lib/
             fi
         done
         
-        # Copy additional Qt6 platform plugins and libraries
-        QT6_LIB_PATH=$(python3 -c "import PyQt6; import os; print(os.path.dirname(PyQt6.__file__))")
-        if [ -d "$QT6_LIB_PATH/Qt6/lib" ]; then
-            cp -r "$QT6_LIB_PATH/Qt6/lib/"* AppDir/usr/lib/ 2>/dev/null || true
-        fi
-        if [ -d "$QT6_LIB_PATH/Qt6/plugins" ]; then
-            mkdir -p AppDir/usr/plugins
-            cp -r "$QT6_LIB_PATH/Qt6/plugins/"* AppDir/usr/plugins/ 2>/dev/null || true
-        fi
-        
-        # Copy system Qt6 libraries as backup
+        # Copy additional Qt6 libraries from system
         for lib in /usr/lib/x86_64-linux-gnu/libQt6*.so*; do
             if [ -f "$lib" ]; then
+                echo "Copying system Qt6 lib: $lib"
                 cp "$lib" AppDir/usr/lib/ 2>/dev/null || true
             fi
         done
+        
+        # Copy xcb and related libraries
+        echo "Copying XCB libraries..."
+        for lib in /usr/lib/x86_64-linux-gnu/libxcb*.so*; do
+            if [ -f "$lib" ]; then
+                echo "Copying XCB lib: $lib"
+                cp "$lib" AppDir/usr/lib/ 2>/dev/null || true
+            fi
+        done
+        
+        # Copy Qt6 platform plugins (THE IMPORTANT PART!)
+        echo "Copying Qt6 platform plugins..."
+        QT6_PLUGINS_PATH=$(python3 -c "import PyQt6.QtCore; import os; print(os.path.join(os.path.dirname(PyQt6.QtCore.__file__), 'Qt6', 'plugins'))" 2>/dev/null || echo "")
+        
+        # Try multiple possible Qt6 plugin locations
+        for plugin_base in "$QT6_PLUGINS_PATH" "/usr/lib/x86_64-linux-gnu/qt6/plugins" "/usr/lib/qt6/plugins"; do
+            if [ -d "$plugin_base/platforms" ]; then
+                echo "Found Qt6 plugins at: $plugin_base"
+                cp -r "$plugin_base/platforms/"* AppDir/usr/plugins/platforms/ 2>/dev/null || true
+                cp -r "$plugin_base/platformthemes/"* AppDir/usr/plugins/platformthemes/ 2>/dev/null || true
+                cp -r "$plugin_base/xcbglintegrations/"* AppDir/usr/plugins/xcbglintegrations/ 2>/dev/null || true
+                break
+            fi
+        done
+        
+        # Ensure we have the xcb plugin
+        if [ ! -f "AppDir/usr/plugins/platforms/libqxcb.so" ]; then
+            echo "ERROR: xcb plugin not found! Searching everywhere..."
+            find /usr -name "libqxcb.so" 2>/dev/null | head -1 | while read xcb_plugin; do
+                if [ -f "$xcb_plugin" ]; then
+                    echo "Found xcb plugin at: $xcb_plugin"
+                    cp "$xcb_plugin" AppDir/usr/plugins/platforms/
+                fi
+            done
+        fi
+        
+        # List what we got
+        echo "Platform plugins in AppImage:"
+        ls -la AppDir/usr/plugins/platforms/
         
         # Create desktop file
         cat > AppDir/usr/share/applications/hwytvid-grabber.desktop << 'EOF'
@@ -234,23 +267,32 @@ jobs:
         cp icon.png AppDir/usr/share/icons/hicolor/256x256/apps/hwytvid-grabber.png
         cp icon.png AppDir/hwytvid-grabber.png
         
-        # Create AppRun with library path setup
+        # Create AppRun with proper Qt6 environment
         cat > AppDir/AppRun << 'EOF'
         #!/bin/bash
         HERE="$(dirname "$(readlink -f "${0}")")"
+        
+        # Set up paths
         export PATH="${HERE}/usr/bin:${PATH}"
         export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
-        export QT_PLUGIN_PATH="${HERE}/usr/plugins:${QT_PLUGIN_PATH}"
+        
+        # Qt6 plugin paths
+        export QT_PLUGIN_PATH="${HERE}/usr/plugins"
         export QT_QPA_PLATFORM_PLUGIN_PATH="${HERE}/usr/plugins/platforms"
-        # Set Qt6 platform to xcb
+        
+        # Force xcb platform
         export QT_QPA_PLATFORM=xcb
-        # Fallback platforms
-        export QT_QPA_PLATFORM_PLUGIN_PATH="${HERE}/usr/plugins/platforms:/usr/lib/x86_64-linux-gnu/qt6/plugins/platforms"
+        
+        # Debug info
+        echo "Qt6 Platform plugins available:"
+        ls "${HERE}/usr/plugins/platforms/" 2>/dev/null || echo "No platform plugins found!"
+        
+        # Run the app
         exec "${HERE}/usr/bin/HwYtVidGrabber" "$@"
         EOF
         chmod +x AppDir/AppRun
         
-        # Build AppImage without FUSE requirement
+        # Build AppImage
         ARCH=x86_64 ./appimagetool-x86_64.AppImage --appimage-extract-and-run AppDir HwYtVidGrabber.AppImage
     
     - name: Upload AppImage
@@ -261,7 +303,7 @@ jobs:
 
   build-linux-packages:
     needs: [build-linux-appimage]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     

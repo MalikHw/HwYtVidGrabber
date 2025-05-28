@@ -29,21 +29,7 @@ jobs:
     
     - name: Build fully bundled Windows executable
       run: |
-        pyinstaller --windowed --onefile --icon=icon.ico ^
-        --add-data="icon.png;." --add-data="icon.ico;." ^
-        --collect-all PyQt6 ^
-        --collect-all PyQt6.QtCore ^
-        --collect-all PyQt6.QtGui ^
-        --collect-all PyQt6.QtWidgets ^
-        --collect-submodules PyQt6 ^
-        --hidden-import=PyQt6.sip ^
-        --collect-all yt_dlp ^
-        --collect-all certifi ^
-        --collect-all urllib3 ^
-        --collect-all requests ^
-        --noconsole ^
-        --name=HwYtVidGrabber ^
-        HwYtVidGrabber.py
+        pyinstaller --windowed --onefile --icon=icon.ico --add-data="icon.png;." --add-data="icon.ico;." --collect-all PyQt6 --collect-all PyQt6.QtCore --collect-all PyQt6.QtGui --collect-all PyQt6.QtWidgets --collect-submodules PyQt6 --hidden-import=PyQt6.sip --collect-all yt_dlp --collect-all certifi --collect-all urllib3 --collect-all requests --noconsole --name=HwYtVidGrabber HwYtVidGrabber.py
     
     - name: Upload Windows artifact
       uses: actions/upload-artifact@v4

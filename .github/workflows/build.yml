@@ -302,24 +302,18 @@ jobs:
         path: HwYtVidGrabber.AppImage
 
   build-linux-packages:
-    needs: [build-linux-appimage]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     
-    - name: Download AppImage
-      uses: actions/download-artifact@v4
-      with:
-        name: linux-appimage
-    
-    - name: Extract AppImage and create packages
+    - name: Install packaging tools
       run: |
-        chmod +x HwYtVidGrabber.AppImage
-        
-        # Extract AppImage contents
-        ./HwYtVidGrabber.AppImage --appimage-extract
-        
-        # Build .deb package WITHOUT Qt6 libraries (use system ones)
+        sudo apt-get update
+        sudo apt-get install -y debhelper dh-python devscripts fakeroot
+    
+    - name: Create lightweight DEB package
+      run: |
+        # Build .deb package with ONLY Python file
         mkdir -p deb-package/DEBIAN
         mkdir -p deb-package/opt/hwytvid-grabber
         mkdir -p deb-package/usr/bin
@@ -327,63 +321,80 @@ jobs:
         mkdir -p deb-package/usr/share/pixmaps
         mkdir -p deb-package/usr/share/doc/hwytvid-grabber
         
-        # Copy ONLY the Python executable and yt-dlp data (no Qt6 libs)
-        mkdir -p deb-package/opt/hwytvid-grabber/usr/bin
-        cp squashfs-root/usr/bin/HwYtVidGrabber deb-package/opt/hwytvid-grabber/usr/bin/
+        # Copy ONLY the Python source file and icons
+        cp HwYtVidGrabber.py deb-package/opt/hwytvid-grabber/
+        cp icon.png deb-package/opt/hwytvid-grabber/
+        cp icon.ico deb-package/opt/hwytvid-grabber/
         
-        # Copy only non-Qt6 libraries if any
-        if [ -d "squashfs-root/usr/lib" ]; then
-            mkdir -p deb-package/opt/hwytvid-grabber/usr/lib
-            for lib in squashfs-root/usr/lib/*; do
-                if [[ ! $(basename "$lib") == libQt6* ]] && [[ ! $(basename "$lib") == libxcb* ]]; then
-                    cp "$lib" deb-package/opt/hwytvid-grabber/usr/lib/ 2>/dev/null || true
-                fi
-            done
-        fi
-        
-        # Copy icons and desktop files (not Qt6 plugins)
-        cp squashfs-root/hwytvid-grabber.desktop deb-package/opt/hwytvid-grabber/
-        cp squashfs-root/hwytvid-grabber.png deb-package/opt/hwytvid-grabber/
-        
-        # Create wrapper script that uses system Qt6
+        # Create wrapper script that uses system dependencies
         cat > deb-package/usr/bin/hwytvid-grabber << 'EOF'
         #!/bin/bash
-        # Use system Qt6 libraries and plugins
+        # Use system Qt6 libraries and yt-dlp
         export QT_QPA_PLATFORM=xcb
-        export LD_LIBRARY_PATH="/opt/hwytvid-grabber/usr/lib:${LD_LIBRARY_PATH}"
-        exec /opt/hwytvid-grabber/usr/bin/HwYtVidGrabber "$@"
+        cd /opt/hwytvid-grabber
+        exec python3 HwYtVidGrabber.py "$@"
         EOF
         chmod +x deb-package/usr/bin/hwytvid-grabber
         
-        # Copy desktop file and icon
-        cp deb-package/opt/hwytvid-grabber/hwytvid-grabber.desktop deb-package/usr/share/applications/
-        cp deb-package/opt/hwytvid-grabber/hwytvid-grabber.png deb-package/usr/share/pixmaps/
+        # Create desktop file
+        cat > deb-package/usr/share/applications/hwytvid-grabber.desktop << 'EOF'
+        [Desktop Entry]
+        Name=HwYtVidGrabber
+        Comment=HwYtVidGrabber - YouTube Video Downloader by MalikHw47
+        Exec=hwytvid-grabber
+        Icon=hwytvid-grabber
+        Terminal=false
+        Type=Application
+        Categories=AudioVideo;Network;
+        StartupWMClass=HwYtVidGrabber
+        EOF
         
-        # Fix desktop file Exec path
-        sed -i 's/Exec=HwYtVidGrabber/Exec=hwytvid-grabber/' deb-package/usr/share/applications/hwytvid-grabber.desktop
+        # Copy icon
+        cp icon.png deb-package/usr/share/pixmaps/hwytvid-grabber.png
         
-        # Create control file with Qt6 dependencies from apt
+        # Create control file with minimal dependencies
         cat > deb-package/DEBIAN/control << 'EOF'
         Package: hwytvid-grabber
         Version: 1.3
         Section: video
         Priority: optional
         Architecture: amd64
-        Depends: fuse, libc6, python3-pyqt6, qt6-qpa-plugins, libqt6gui6, libqt6widgets6, libqt6core6, libxcb1, libxcb-xinerama0, libxcb-cursor0
-        Maintainer: help.malicorporation@gmail.com
-        Description: YouTube Video Downloader with system Qt6 libraries
-         A modern PyQt6-based YouTube video downloader that uses system Qt6 libraries.
-         This package installs Qt6 dependencies from official repositories.
+        Depends: python3, python3-pyqt6, qt6-qpa-plugins, libqt6gui6, libqt6widgets6, libqt6core6, python3-pip
+        Maintainer: MalikHw47 <help.malicorporation@gmail.com>
+        Description: HwYtVidGrabber - YouTube Video Downloader by MalikHw47
+         HwYtVidGrabber is a lightweight PyQt6-based YouTube video downloader 
+         created by MalikHw47 that uses system libraries.
+         This package automatically installs yt-dlp via pip on first run.
          .
          Features include:
-          - YouTube video downloading with yt-dlp
+          - YouTube video downloading with yt-dlp (auto-installed)
           - Modern PyQt6 interface (uses system libraries)
           - Multiple format support (MP4, MP3, muted MP4)
           - Resolution selection up to 4K
           - Dark mode support
-          - Uses system Qt6 packages to avoid conflicts
+          - Minimal package size - downloads dependencies as needed
         Homepage: https://github.com/MalikHw47/HwYtVidGrabber
         EOF
+        
+        # Create postinst script to auto-install yt-dlp
+        cat > deb-package/DEBIAN/postinst << 'EOF'
+        #!/bin/bash
+        set -e
+        
+        # Install yt-dlp via pip if not already installed
+        if ! python3 -c "import yt_dlp" 2>/dev/null; then
+            echo "Installing yt-dlp..."
+            python3 -m pip install --user yt-dlp || python3 -m pip install --break-system-packages yt-dlp
+        fi
+        
+        # Update desktop database
+        if [ -x /usr/bin/update-desktop-database ]; then
+            /usr/bin/update-desktop-database /usr/share/applications
+        fi
+        
+        exit 0
+        EOF
+        chmod +x deb-package/DEBIAN/postinst
         
         # Create copyright file
         cat > deb-package/usr/share/doc/hwytvid-grabber/copyright << 'EOF'
@@ -400,75 +411,90 @@ jobs:
         cat > deb-package/usr/share/doc/hwytvid-grabber/changelog << 'EOF'
         hwytvid-grabber (1.3) unstable; urgency=medium
 
-          * Release version 1.3 - System Qt6 libraries
-          * Uses system Qt6 packages to avoid conflicts
-          * Automatically installs Qt6 dependencies from apt
-          * Only bundles Python app, not Qt6 libraries
+          * HwYtVidGrabber v1.3 by MalikHw47 - Lightweight package
+          * Uses system Qt6 packages and auto-installs yt-dlp
+          * Only contains Python source file for minimal size
+          * Automatically downloads yt-dlp on first installation
 
-         -- help.malicorporation@gmail.com  $(date -R)
+         -- MalikHw47 <help.malicorporation@gmail.com>  $(date -R)
         EOF
         
         gzip deb-package/usr/share/doc/hwytvid-grabber/changelog
         
         # Build DEB package
         dpkg-deb --build deb-package HwYtVidGrabber.deb
-        
-        # Build Arch Linux package WITHOUT Qt6 libraries (use system ones)
+    
+    - name: Create lightweight Arch package
+      run: |
+        # Build Arch Linux package with ONLY Python file
         mkdir -p arch-package/pkg/opt/hwytvid-grabber
         mkdir -p arch-package/pkg/usr/bin
         mkdir -p arch-package/pkg/usr/share/applications
         mkdir -p arch-package/pkg/usr/share/pixmaps
         
-        # Copy only the Python executable (no Qt6 libs)
-        mkdir -p arch-package/pkg/opt/hwytvid-grabber/usr/bin
-        cp squashfs-root/usr/bin/HwYtVidGrabber arch-package/pkg/opt/hwytvid-grabber/usr/bin/
+        # Copy ONLY the Python source file and icons
+        cp HwYtVidGrabber.py arch-package/pkg/opt/hwytvid-grabber/
+        cp icon.png arch-package/pkg/opt/hwytvid-grabber/
+        cp icon.ico arch-package/pkg/opt/hwytvid-grabber/
         
-        # Copy only non-Qt6 libraries
-        if [ -d "squashfs-root/usr/lib" ]; then
-            mkdir -p arch-package/pkg/opt/hwytvid-grabber/usr/lib
-            for lib in squashfs-root/usr/lib/*; do
-                if [[ ! $(basename "$lib") == libQt6* ]] && [[ ! $(basename "$lib") == libxcb* ]]; then
-                    cp "$lib" arch-package/pkg/opt/hwytvid-grabber/usr/lib/ 2>/dev/null || true
-                fi
-            done
-        fi
-        
-        # Copy icons and desktop files
-        cp squashfs-root/hwytvid-grabber.desktop arch-package/pkg/opt/hwytvid-grabber/
-        cp squashfs-root/hwytvid-grabber.png arch-package/pkg/opt/hwytvid-grabber/
-        
-        # Create wrapper script that uses system Qt6
+        # Create wrapper script that uses system dependencies
         cat > arch-package/pkg/usr/bin/hwytvid-grabber << 'EOF'
         #!/bin/bash
-        # Use system Qt6 libraries and plugins
+        # Use system Qt6 libraries and yt-dlp
         export QT_QPA_PLATFORM=xcb
-        export LD_LIBRARY_PATH="/opt/hwytvid-grabber/usr/lib:${LD_LIBRARY_PATH}"
-        exec /opt/hwytvid-grabber/usr/bin/HwYtVidGrabber "$@"
+        cd /opt/hwytvid-grabber
+        exec python HwYtVidGrabber.py "$@"
         EOF
         chmod +x arch-package/pkg/usr/bin/hwytvid-grabber
         
-        # Copy desktop file and icon
-        cp arch-package/pkg/opt/hwytvid-grabber/hwytvid-grabber.desktop arch-package/pkg/usr/share/applications/
-        cp arch-package/pkg/opt/hwytvid-grabber/hwytvid-grabber.png arch-package/pkg/usr/share/pixmaps/
+        # Create desktop file
+        cat > arch-package/pkg/usr/share/applications/hwytvid-grabber.desktop << 'EOF'
+        [Desktop Entry]
+        Name=HwYtVidGrabber
+        Comment=HwYtVidGrabber - YouTube Video Downloader by MalikHw47
+        Exec=hwytvid-grabber
+        Icon=hwytvid-grabber
+        Terminal=false
+        Type=Application
+        Categories=AudioVideo;Network;
+        StartupWMClass=HwYtVidGrabber
+        EOF
         
-        # Create .PKGINFO with Qt6 dependencies
+        # Copy icon
+        cp icon.png arch-package/pkg/usr/share/pixmaps/hwytvid-grabber.png
+        
+        # Create .PKGINFO with minimal dependencies
         cat > arch-package/pkg/.PKGINFO << 'EOF'
         pkgname = hwytvid-grabber
         pkgbase = hwytvid-grabber
         pkgver = 1.3-1
-        pkgdesc = YouTube Video Downloader using system Qt6 libraries
+        pkgdesc = HwYtVidGrabber - YouTube Video Downloader by MalikHw47
         url = https://github.com/MalikHw47/HwYtVidGrabber
         arch = x86_64
         license = MIT
-        depend = fuse
-        depend = glibc
+        depend = python
         depend = python-pyqt6
         depend = qt6-base
+        depend = python-pip
         EOF
+        
+        # Create install script for auto-installing yt-dlp
+        cat > arch-package/pkg/.INSTALL << 'EOF'
+        post_install() {
+            echo "Installing yt-dlp..."
+            if ! python -c "import yt_dlp" 2>/dev/null; then
+                python -m pip install --user yt-dlp || python -m pip install --break-system-packages yt-dlp
+    fi
+}
+
+post_upgrade() {
+    post_install
+}
+EOF
         
         # Create package archive
         cd arch-package/pkg
-        tar -czf ../../HwYtVidGrabber.pkg.tar.gz .PKGINFO opt/ usr/
+        tar -czf ../../HwYtVidGrabber.pkg.tar.gz .PKGINFO .INSTALL opt/ usr/
     
     - name: Upload DEB package
       uses: actions/upload-artifact@v4

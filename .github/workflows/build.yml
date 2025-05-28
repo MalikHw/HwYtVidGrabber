@@ -326,34 +326,12 @@ jobs:
         cp icon.png deb-package/opt/HwYtVidGrabber/
         cp icon.ico deb-package/opt/HwYtVidGrabber/
         
-        # Create wrapper script that uses pyenv virtual environment
+        # Create wrapper script that uses virtual environment
         cat > deb-package/usr/bin/HwYtVidGrabber << 'EOF'
         #!/bin/bash
-        # HwYtVidGrabber wrapper script with pyenv virtual environment
+        # HwYtVidGrabber wrapper script with virtual environment
         
-        VENV_DIR="$HOME/.local/share/HwYtVidGrabber/venv"
-        
-        # Function to setup virtual environment
-        setup_venv() {
-            echo "Setting up HwYtVidGrabber virtual environment..."
-            
-            # Create directory if it doesn't exist
-            mkdir -p "$(dirname "$VENV_DIR")"
-            
-            # Create virtual environment
-            python3 -m venv "$VENV_DIR"
-            
-            # Install yt-dlp in the virtual environment
-            "$VENV_DIR/bin/pip" install --upgrade pip
-            "$VENV_DIR/bin/pip" install yt-dlp
-            
-            echo "Virtual environment setup complete!"
-        }
-        
-        # Check if virtual environment exists and has yt-dlp
-        if [ ! -f "$VENV_DIR/bin/python" ] || ! "$VENV_DIR/bin/python" -c "import yt_dlp" 2>/dev/null; then
-            setup_venv
-        fi
+        VENV_DIR="/opt/HwYtVidGrabber/venv"
         
         # Set Qt6 platform and run the application
         export QT_QPA_PLATFORM=xcb
@@ -385,35 +363,49 @@ jobs:
         Section: video
         Priority: optional
         Architecture: amd64
-        Depends: python3, python3-pyqt6, qt6-qpa-plugins, libqt6gui6, libqt6widgets6, libqt6core6, python3-venv
+        Depends: python3, python3-pyqt6, qt6-qpa-plugins, libqt6gui6, libqt6widgets6, libqt6core6, python3-venv, python3-pip
         Maintainer: MalikHw47 <help.malicorporation@gmail.com>
         Description: HwYtVidGrabber - YouTube Video Downloader by MalikHw47
          HwYtVidGrabber is a lightweight PyQt6-based YouTube video downloader 
          created by MalikHw47 that uses system libraries and virtual environment.
-         This package automatically creates a virtual environment and installs yt-dlp.
+         This package automatically creates a virtual environment and installs yt-dlp during installation.
          .
          Features include:
-          - YouTube video downloading with yt-dlp (auto-installed in venv)
+          - YouTube video downloading with yt-dlp (installed during package setup)
           - Modern PyQt6 interface (uses system libraries)
           - Multiple format support (MP4, MP3, muted MP4)
           - Resolution selection up to 4K
           - Dark mode support
-          - Isolated virtual environment to avoid system conflicts
+          - Isolated virtual environment created during installation
         Homepage: https://github.com/MalikHw47/HwYtVidGrabber
         EOF
         
-        # Create postinst script to update desktop database
+        # Create postinst script to create venv and install yt-dlp
         cat > deb-package/DEBIAN/postinst << 'EOF'
         #!/bin/bash
         set -e
+        
+        VENV_DIR="/opt/HwYtVidGrabber/venv"
+        
+        echo "Creating HwYtVidGrabber virtual environment..."
+        
+        # Create virtual environment in /opt/HwYtVidGrabber/venv
+        python3 -m venv "$VENV_DIR"
+        
+        # Install yt-dlp in the virtual environment 
+        "$VENV_DIR/bin/pip" install --upgrade pip
+        "$VENV_DIR/bin/pip" install yt-dlp
+        
+        # Make sure venv directory has proper permissions
+        chown -R root:root "$VENV_DIR"
+        chmod -R 755 "$VENV_DIR"
         
         # Update desktop database
         if [ -x /usr/bin/update-desktop-database ]; then
             /usr/bin/update-desktop-database /usr/share/applications
         fi
         
-        echo "HwYtVidGrabber installed successfully!"
-        echo "The application will create a virtual environment on first run."
+        echo "HwYtVidGrabber installed successfully with virtual environment!"
         
         exit 0
         EOF
@@ -435,9 +427,9 @@ jobs:
         HwYtVidGrabber (1.3) unstable; urgency=medium
 
           * HwYtVidGrabber v1.3 by MalikHw47 - Virtual environment package
-          * Uses system Qt6 packages and creates isolated virtual environment
+          * Uses system Qt6 packages and creates isolated virtual environment during installation
           * Only contains Python source file for minimal size
-          * Automatically creates venv and installs yt-dlp on first run
+          * Automatically creates venv and installs yt-dlp during package installation
 
          -- MalikHw47 <help.malicorporation@gmail.com>  $(date -R)
         EOF
@@ -460,34 +452,12 @@ jobs:
         cp icon.png arch-package/pkg/opt/HwYtVidGrabber/
         cp icon.ico arch-package/pkg/opt/HwYtVidGrabber/
         
-        # Create wrapper script that uses pyenv virtual environment
+        # Create wrapper script that uses virtual environment
         cat > arch-package/pkg/usr/bin/HwYtVidGrabber << 'EOF'
         #!/bin/bash
-        # HwYtVidGrabber wrapper script with pyenv virtual environment
+        # HwYtVidGrabber wrapper script with virtual environment
         
-        VENV_DIR="$HOME/.local/share/HwYtVidGrabber/venv"
-        
-        # Function to setup virtual environment
-        setup_venv() {
-            echo "Setting up HwYtVidGrabber virtual environment..."
-            
-            # Create directory if it doesn't exist
-            mkdir -p "$(dirname "$VENV_DIR")"
-            
-            # Create virtual environment
-            python -m venv "$VENV_DIR"
-            
-            # Install yt-dlp in the virtual environment
-            "$VENV_DIR/bin/pip" install --upgrade pip
-            "$VENV_DIR/bin/pip" install yt-dlp
-            
-            echo "Virtual environment setup complete!"
-        }
-        
-        # Check if virtual environment exists and has yt-dlp
-        if [ ! -f "$VENV_DIR/bin/python" ] || ! "$VENV_DIR/bin/python" -c "import yt_dlp" 2>/dev/null; then
-            setup_venv
-        fi
+        VENV_DIR="/opt/HwYtVidGrabber/venv"
         
         # Set Qt6 platform and run the application
         export QT_QPA_PLATFORM=xcb
@@ -524,13 +494,28 @@ jobs:
         depend = python
         depend = python-pyqt6
         depend = qt6-base
+        depend = python-pip
         EOF
         
-        # Create install script for post-installation message
+        # Create install script for creating venv during installation
         cat > arch-package/pkg/.INSTALL << 'EOF'
         post_install() {
-            echo "HwYtVidGrabber installed successfully!"
-            echo "The application will create a virtual environment on first run."
+            VENV_DIR="/opt/HwYtVidGrabber/venv"
+            
+            echo "Creating HwYtVidGrabber virtual environment..."
+            
+            # Create virtual environment in /opt/HwYtVidGrabber/venv
+            python -m venv "$VENV_DIR"
+            
+            # Install yt-dlp in the virtual environment 
+            "$VENV_DIR/bin/pip" install --upgrade pip
+            "$VENV_DIR/bin/pip" install yt-dlp
+            
+            # Make sure venv directory has proper permissions
+            chown -R root:root "$VENV_DIR"
+            chmod -R 755 "$VENV_DIR"
+            
+            echo "HwYtVidGrabber installed successfully with virtual environment!"
 }
 
 post_upgrade() {

@@ -516,12 +516,12 @@ jobs:
             chmod -R 755 "$VENV_DIR"
             
             echo "HwYtVidGrabber installed successfully with virtual environment!"
-}
+        }
 
-post_upgrade() {
-    post_install
-}
-EOF
+        post_upgrade() {
+            post_install
+        }
+        EOF
         
         # Create package archive
         cd arch-package/pkg

@@ -1,4 +1,4 @@
-name: Build Multi-Platform Releases
+name: Build Self-Contained Multi-Platform Releases
 
 permissions:
   contents: write
@@ -27,9 +27,23 @@ jobs:
         pip install pyinstaller
         pip install -r requirements.txt
     
-    - name: Build Windows executable
+    - name: Build fully bundled Windows executable
       run: |
-        pyinstaller --windowed --onefile --icon=icon.ico --add-data="icon.png;." --add-data="icon.ico;." HwYtVidGrabber.py
+        pyinstaller --windowed --onefile --icon=icon.ico ^
+        --add-data="icon.png;." --add-data="icon.ico;." ^
+        --collect-all PyQt6 ^
+        --collect-all PyQt6.QtCore ^
+        --collect-all PyQt6.QtGui ^
+        --collect-all PyQt6.QtWidgets ^
+        --collect-submodules PyQt6 ^
+        --hidden-import=PyQt6.sip ^
+        --collect-all yt_dlp ^
+        --collect-all certifi ^
+        --collect-all urllib3 ^
+        --collect-all requests ^
+        --noconsole ^
+        --name=HwYtVidGrabber ^
+        HwYtVidGrabber.py
     
     - name: Upload Windows artifact
       uses: actions/upload-artifact@v4
@@ -53,9 +67,23 @@ jobs:
         pip install pyinstaller
         pip install -r requirements.txt
     
-    - name: Build macOS application
+    - name: Build fully bundled macOS application
       run: |
-        pyinstaller --windowed --onefile --icon=icon.ico --add-data="icon.png:." --add-data="icon.ico:." HwYtVidGrabber.py
+        pyinstaller --windowed --onefile --icon=icon.ico \
+        --add-data="icon.png:." --add-data="icon.ico:." \
+        --collect-all PyQt6 \
+        --collect-all PyQt6.QtCore \
+        --collect-all PyQt6.QtGui \
+        --collect-all PyQt6.QtWidgets \
+        --collect-submodules PyQt6 \
+        --hidden-import=PyQt6.sip \
+        --collect-all yt_dlp \
+        --collect-all certifi \
+        --collect-all urllib3 \
+        --collect-all requests \
+        --name=HwYtVidGrabber \
+        HwYtVidGrabber.py
+        
         # Create proper .app bundle
         mkdir -p HwYtVidGrabber.app/Contents/MacOS
         mkdir -p HwYtVidGrabber.app/Contents/Resources
@@ -123,7 +151,7 @@ jobs:
         name: macos-dmg
         path: HwYtVidGrabber.dmg
 
-  build-linux-packages:
+  build-linux-appimage:
     runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v4
@@ -137,7 +165,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y python3-dev python3-pip build-essential
-        # Install Qt6 dependencies
+        # Install Qt6 dependencies for building
         sudo apt-get install -y qt6-base-dev qt6-tools-dev libqt6gui6 libqt6widgets6 libqt6core6
         sudo apt-get install -y qt6-qpa-plugins libqt6dbus6 libqt6network6 libqt6svg6
         # Install packaging tools
@@ -145,6 +173,8 @@ jobs:
         sudo apt-get install -y alien rpm2cpio cpio
         # Install AppImage tools
         sudo apt-get install -y zsync desktop-file-utils file
+        # Install library copying tools
+        sudo apt-get install -y patchelf
     
     - name: Install Python dependencies
       run: |
@@ -152,34 +182,68 @@ jobs:
         pip install pyinstaller
         pip install -r requirements.txt
     
-    - name: Build base application
+    - name: Build fully bundled Linux AppImage
       run: |
-        pyinstaller --onefile --windowed --icon=icon.ico --add-data="icon.png:." --add-data="icon.ico:." HwYtVidGrabber.py
-        mkdir -p build-assets
-        cp dist/HwYtVidGrabber build-assets/
-        chmod +x build-assets/HwYtVidGrabber
-    
-    # Build .deb package for Debian/Ubuntu
-    - name: Create DEB package structure
-      run: |
-        mkdir -p deb-package/DEBIAN
-        mkdir -p deb-package/usr/bin
-        mkdir -p deb-package/usr/share/applications
-        mkdir -p deb-package/usr/share/pixmaps
-        mkdir -p deb-package/usr/share/doc/hwytvid-grabber
+        # Build with all Qt6 libraries bundled
+        pyinstaller --onefile --windowed --icon=icon.ico \
+        --add-data="icon.png:." --add-data="icon.ico:." \
+        --collect-all PyQt6 \
+        --collect-all PyQt6.QtCore \
+        --collect-all PyQt6.QtGui \
+        --collect-all PyQt6.QtWidgets \
+        --collect-submodules PyQt6 \
+        --hidden-import=PyQt6.sip \
+        --collect-all yt_dlp \
+        --collect-all certifi \
+        --collect-all urllib3 \
+        --collect-all requests \
+        --name=HwYtVidGrabber \
+        HwYtVidGrabber.py
         
-        # Copy executable
-        cp build-assets/HwYtVidGrabber deb-package/usr/bin/hwytvid-grabber
+        # Download appimagetool-x86_64.AppImage
+        wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+        chmod +x appimagetool-x86_64.AppImage
         
-        # Copy icon
-        cp icon.png deb-package/usr/share/pixmaps/hwytvid-grabber.png
+        # Create AppDir structure
+        mkdir -p AppDir/usr/bin
+        mkdir -p AppDir/usr/lib
+        mkdir -p AppDir/usr/share/applications
+        mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+        
+        # Copy the bundled executable
+        cp dist/HwYtVidGrabber AppDir/usr/bin/
+        
+        # Copy all Qt6 libraries that the executable depends on
+        # This ensures complete self-containment
+        ldd dist/HwYtVidGrabber | grep -E "(libQt6|libqt6)" | awk '{print $3}' | while read lib; do
+            if [ -f "$lib" ]; then
+                cp "$lib" AppDir/usr/lib/
+            fi
+        done
+        
+        # Copy additional Qt6 platform plugins and libraries
+        QT6_LIB_PATH=$(python3 -c "import PyQt6; import os; print(os.path.dirname(PyQt6.__file__))")
+        if [ -d "$QT6_LIB_PATH/Qt6/lib" ]; then
+            cp -r "$QT6_LIB_PATH/Qt6/lib/"* AppDir/usr/lib/ 2>/dev/null || true
+        fi
+        if [ -d "$QT6_LIB_PATH/Qt6/plugins" ]; then
+            mkdir -p AppDir/usr/plugins
+            cp -r "$QT6_LIB_PATH/Qt6/plugins/"* AppDir/usr/plugins/ 2>/dev/null || true
+        fi
+        
+        # Copy system Qt6 libraries as backup
+        for lib in /usr/lib/x86_64-linux-gnu/libQt6*.so*; do
+            if [ -f "$lib" ]; then
+                cp "$lib" AppDir/usr/lib/ 2>/dev/null || true
+            fi
+        done
         
         # Create desktop file
-        cat > deb-package/usr/share/applications/hwytvid-grabber.desktop << 'EOF'
+        cat > AppDir/usr/share/applications/hwytvid-grabber.desktop << 'EOF'
         [Desktop Entry]
         Name=HwYtVidGrabber
         Comment=YouTube Video Downloader
-        Exec=hwytvid-grabber
+        Exec=HwYtVidGrabber
         Icon=hwytvid-grabber
         Terminal=false
         Type=Application
@@ -187,25 +251,101 @@ jobs:
         StartupWMClass=HwYtVidGrabber
         EOF
         
-        # Create control file
+        # Copy desktop file to root
+        cp AppDir/usr/share/applications/hwytvid-grabber.desktop AppDir/
+        
+        # Copy icons
+        cp icon.png AppDir/usr/share/icons/hicolor/256x256/apps/hwytvid-grabber.png
+        cp icon.png AppDir/hwytvid-grabber.png
+        
+        # Create AppRun with library path setup
+        cat > AppDir/AppRun << 'EOF'
+        #!/bin/bash
+        HERE="$(dirname "$(readlink -f "${0}")")"
+        export PATH="${HERE}/usr/bin:${PATH}"
+        export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+        export QT_PLUGIN_PATH="${HERE}/usr/plugins:${QT_PLUGIN_PATH}"
+        export QT_QPA_PLATFORM_PLUGIN_PATH="${HERE}/usr/plugins/platforms"
+        # Set Qt6 platform to xcb
+        export QT_QPA_PLATFORM=xcb
+        # Fallback platforms
+        export QT_QPA_PLATFORM_PLUGIN_PATH="${HERE}/usr/plugins/platforms:/usr/lib/x86_64-linux-gnu/qt6/plugins/platforms"
+        exec "${HERE}/usr/bin/HwYtVidGrabber" "$@"
+        EOF
+        chmod +x AppDir/AppRun
+        
+        # Build AppImage without FUSE requirement
+        ARCH=x86_64 ./appimagetool-x86_64.AppImage --appimage-extract-and-run AppDir HwYtVidGrabber.AppImage
+    
+    - name: Upload AppImage
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-appimage
+        path: HwYtVidGrabber.AppImage
+
+  build-linux-packages:
+    needs: [build-linux-appimage]
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download AppImage
+      uses: actions/download-artifact@v4
+      with:
+        name: linux-appimage
+    
+    - name: Extract AppImage and create packages
+      run: |
+        chmod +x HwYtVidGrabber.AppImage
+        
+        # Extract AppImage contents
+        ./HwYtVidGrabber.AppImage --appimage-extract
+        
+        # Build .deb package using AppImage contents
+        mkdir -p deb-package/DEBIAN
+        mkdir -p deb-package/opt/hwytvid-grabber
+        mkdir -p deb-package/usr/bin
+        mkdir -p deb-package/usr/share/applications
+        mkdir -p deb-package/usr/share/pixmaps
+        mkdir -p deb-package/usr/share/doc/hwytvid-grabber
+        
+        # Copy all AppImage contents to /opt/hwytvid-grabber
+        cp -r squashfs-root/* deb-package/opt/hwytvid-grabber/
+        
+        # Create wrapper script in /usr/bin
+        cat > deb-package/usr/bin/hwytvid-grabber << 'EOF'
+        #!/bin/bash
+        exec /opt/hwytvid-grabber/AppRun "$@"
+        EOF
+        chmod +x deb-package/usr/bin/hwytvid-grabber
+        
+        # Copy desktop file and icon
+        cp squashfs-root/hwytvid-grabber.desktop deb-package/usr/share/applications/
+        cp squashfs-root/hwytvid-grabber.png deb-package/usr/share/pixmaps/
+        
+        # Fix desktop file Exec path
+        sed -i 's/Exec=HwYtVidGrabber/Exec=hwytvid-grabber/' deb-package/usr/share/applications/hwytvid-grabber.desktop
+        
+        # Create control file with minimal dependencies
         cat > deb-package/DEBIAN/control << 'EOF'
         Package: hwytvid-grabber
         Version: 1.3
         Section: video
         Priority: optional
         Architecture: amd64
-        Depends: libqt6core6, libqt6gui6, libqt6widgets6, python3, ffmpeg
+        Depends: fuse, libc6
         Maintainer: help.malicorporation@gmail.com
-        Description: YouTube Video Downloader
-         A modern PyQt6-based YouTube video downloader with support for
-         multiple formats and resolutions up to 4K.
+        Description: Self-contained YouTube Video Downloader
+         A modern PyQt6-based YouTube video downloader with all dependencies bundled.
+         This package includes all Qt6 libraries and Python dependencies.
          .
          Features include:
           - YouTube video downloading with yt-dlp
-          - Modern PyQt6 interface
+          - Modern PyQt6 interface (bundled)
           - Multiple format support (MP4, MP3, muted MP4)
           - Resolution selection up to 4K
           - Dark mode support
+          - No external dependencies except FUSE and libc6
         Homepage: https://github.com/MalikHw47/HwYtVidGrabber
         EOF
         
@@ -224,10 +364,10 @@ jobs:
         cat > deb-package/usr/share/doc/hwytvid-grabber/changelog << 'EOF'
         hwytvid-grabber (1.3) unstable; urgency=medium
 
-          * Release version 1.3
-          * Modern PyQt6 interface
-          * Multiple format support
-          * Cross-platform compatibility
+          * Release version 1.3 - Self-contained build
+          * All Qt6 libraries bundled
+          * All Python dependencies included
+          * Only requires FUSE and libc6
 
          -- help.malicorporation@gmail.com  $(date -R)
         EOF
@@ -236,71 +376,39 @@ jobs:
         
         # Build DEB package
         dpkg-deb --build deb-package HwYtVidGrabber.deb
-    
-    # Build Arch Linux package
-    - name: Create Arch Linux package
-      run: |
+        
+        # Build Arch Linux package using AppImage contents
+        mkdir -p arch-package/pkg/opt/hwytvid-grabber
         mkdir -p arch-package/pkg/usr/bin
         mkdir -p arch-package/pkg/usr/share/applications
         mkdir -p arch-package/pkg/usr/share/pixmaps
         
-        # Copy files
-        cp build-assets/HwYtVidGrabber arch-package/pkg/usr/bin/hwytvid-grabber
-        cp deb-package/usr/share/applications/hwytvid-grabber.desktop arch-package/pkg/usr/share/applications/
-        cp icon.png arch-package/pkg/usr/share/pixmaps/hwytvid-grabber.png
+        # Copy AppImage contents
+        cp -r squashfs-root/* arch-package/pkg/opt/hwytvid-grabber/
         
-        # Create .PKGINFO
+        # Copy wrapper script
+        cp deb-package/usr/bin/hwytvid-grabber arch-package/pkg/usr/bin/
+        
+        # Copy desktop file and icon
+        cp deb-package/usr/share/applications/hwytvid-grabber.desktop arch-package/pkg/usr/share/applications/
+        cp deb-package/usr/share/pixmaps/hwytvid-grabber.png arch-package/pkg/usr/share/pixmaps/
+        
+        # Create .PKGINFO with minimal dependencies
         cat > arch-package/pkg/.PKGINFO << 'EOF'
         pkgname = hwytvid-grabber
         pkgbase = hwytvid-grabber
         pkgver = 1.3-1
-        pkgdesc = YouTube Video Downloader with PyQt6 interface
+        pkgdesc = Self-contained YouTube Video Downloader with all dependencies bundled
         url = https://github.com/MalikHw47/HwYtVidGrabber
         arch = x86_64
         license = MIT
-        depend = python
-        depend = qt6-base
-        depend = ffmpeg
-        depend = python-pyqt6
+        depend = fuse
+        depend = glibc
         EOF
         
         # Create package archive
         cd arch-package/pkg
-        tar -czf ../../HwYtVidGrabber.pkg.tar.gz .PKGINFO usr/
-    
-    # Build AppImage (without FUSE requirement)
-    - name: Create AppImage
-      run: |
-        # Download appimagetool-x86_64.AppImage
-        wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-        chmod +x appimagetool-x86_64.AppImage
-        
-        # Create AppDir structure
-        mkdir -p AppDir/usr/bin
-        mkdir -p AppDir/usr/share/applications
-        mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-        
-        # Copy files
-        cp build-assets/HwYtVidGrabber AppDir/usr/bin/
-        cp deb-package/usr/share/applications/hwytvid-grabber.desktop AppDir/
-        cp icon.png AppDir/usr/share/icons/hicolor/256x256/apps/hwytvid-grabber.png
-        cp icon.png AppDir/hwytvid-grabber.png
-        
-        # Create AppRun
-        cat > AppDir/AppRun << 'EOF'
-        #!/bin/bash
-        HERE="$(dirname "$(readlink -f "${0}")")"
-        export PATH="${HERE}/usr/bin:${PATH}"
-        export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
-        exec "${HERE}/usr/bin/HwYtVidGrabber" "$@"
-        EOF
-        chmod +x AppDir/AppRun
-        
-        # Modify desktop file for AppImage
-        sed -i 's/Exec=hwytvid-grabber/Exec=HwYtVidGrabber/' AppDir/hwytvid-grabber.desktop
-        
-        # Build AppImage without FUSE
-        ARCH=x86_64 ./appimagetool-x86_64.AppImage --appimage-extract-and-run AppDir HwYtVidGrabber.AppImage
+        tar -czf ../../HwYtVidGrabber.pkg.tar.gz .PKGINFO opt/ usr/
     
     - name: Upload DEB package
       uses: actions/upload-artifact@v4
@@ -313,15 +421,9 @@ jobs:
       with:
         name: linux-arch
         path: HwYtVidGrabber.pkg.tar.gz
-    
-    - name: Upload AppImage
-      uses: actions/upload-artifact@v4
-      with:
-        name: linux-appimage
-        path: HwYtVidGrabber.AppImage
 
   create-release:
-    needs: [build-windows, build-macos, build-linux-packages]
+    needs: [build-windows, build-macos, build-linux-appimage, build-linux-packages]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:

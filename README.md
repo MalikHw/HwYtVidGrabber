@@ -16,60 +16,27 @@ A simple, efficient YouTube video and audio downloader without pissing you off
 - Auto-detection of maximum available resolution
 - Customizable download location
 
-## Requirements (only for building)
+## Requirements
 
 - Python 3.8+
-- FFmpeg (automatically detected, with installation guidance)
+- FFmpeg (will auto install it on Linux, but theres a [shit](https://www.gyan.dev/ffmpeg/builds/ffmpeg-git-essentials.7z) (find ffmpeg.exe), u have to put it on HwYtVidGrabbe.exe if you're on windows
 - PyQt6
 - yt-dlp
 
-## Portable version
 
-the app is already portable, but if you want to install it:
 
 ## Installation
 
 
 ### Windows
 
-```batch
-git clone https://github.com/MalikHw/HwYtVidGrabber.git
-cd HwYtVidGrabber
-```
-OR COPY THE REPO
-download `HwYtVidGrabber.exe` from [releases](https://github.com/MalikHw/HwYtVidGrabber/releases/) and copy it to the newly made folder, after that
-```batch
-install.bat
-```
+download HwYtVidGrabber.exe from the releases
+and done :)
 
 ### Linux
 
-```bash
-git clone https://github.com/MalikHw/HwYtVidGrabber.git
-cd HwYtVidGrabber
-```
-OR COPY THE REPO
-download `HwYtVidGrabber` from [releases](https://github.com/MalikHw/HwYtVidGrabber/releases/) and copy it to the newly made folder, after that
-```bash
-./install.sh
-```
+install HwYtVidGrabber.deb(Debian/Ubuntu) or HwYtVidGrabber.pkg.tar.gz(Arch)
 
-## Build from Source
-
-To build a standalone executable:
-
-### Linux
-```bash
-chmod +x build.sh
-./build.sh
-```
-
-### Windows
-```bash
-build.bat
-```
-
-The executable will be created in the `dist` directory, with FFmpeg included.
 
 ## Usage
 
@@ -100,6 +67,15 @@ MIT License
 ## Disclaimer
 
 This tool is designed for personal use only. Always respect copyright laws and YouTube's Terms of Service. Download only content that you have permission to download.
+
+
+
+
+
+
+
+
+...dont spam somewhere & try to download a Miku song :)
 
 
 

@@ -144,6 +144,12 @@ jobs:
     
     - name: Create lightweight DEB package
       run: |
+        # Verify icon.png exists in the repo root
+        if [ ! -f icon.png ]; then
+            echo "Error: icon.png not found in repository root!"
+            exit 1
+        fi
+        
         # Build .deb package with ONLY Python file
         mkdir -p deb-package/DEBIAN
         mkdir -p deb-package/opt/HwYtVidGrabber
@@ -156,6 +162,9 @@ jobs:
         cp HwYtVidGrabber.py deb-package/opt/HwYtVidGrabber/
         cp icon.png deb-package/opt/HwYtVidGrabber/
         cp icon.ico deb-package/opt/HwYtVidGrabber/
+        
+        # Copy icon to pixmaps directory with proper name
+        cp icon.png deb-package/usr/share/pixmaps/HwYtVidGrabber.png
         
         # Create wrapper script that uses virtual environment
         cat > deb-package/usr/bin/HwYtVidGrabber << 'EOF'
@@ -183,9 +192,6 @@ jobs:
         Categories=AudioVideo;Network;
         StartupWMClass=HwYtVidGrabber
         EOF
-        
-        # Copy icon
-        cp icon.png deb-package/usr/share/pixmaps/HwYtVidGrabber.png
         
         # Create control file with minimal dependencies
         cat > deb-package/DEBIAN/control << 'EOF'
@@ -271,6 +277,12 @@ jobs:
     
     - name: Create lightweight Arch package
       run: |
+        # Verify icon.png exists in the repo root
+        if [ ! -f icon.png ]; then
+            echo "Error: icon.png not found in repository root!"
+            exit 1
+        fi
+        
         # Build Arch Linux package with ONLY Python file
         mkdir -p arch-package/pkg/opt/HwYtVidGrabber
         mkdir -p arch-package/pkg/usr/bin
@@ -281,6 +293,9 @@ jobs:
         cp HwYtVidGrabber.py arch-package/pkg/opt/HwYtVidGrabber/
         cp icon.png arch-package/pkg/opt/HwYtVidGrabber/
         cp icon.ico arch-package/pkg/opt/HwYtVidGrabber/
+        
+        # Copy icon to pixmaps directory with proper name
+        cp icon.png arch-package/pkg/usr/share/pixmaps/HwYtVidGrabber.png
         
         # Create wrapper script that uses virtual environment
         cat > arch-package/pkg/usr/bin/HwYtVidGrabber << 'EOF'
@@ -308,9 +323,6 @@ jobs:
         Categories=AudioVideo;Network;
         StartupWMClass=HwYtVidGrabber
         EOF
-        
-        # Copy icon
-        cp icon.png arch-package/pkg/usr/share/pixmaps/HwYtVidGrabber.png
         
         # Create .PKGINFO with minimal dependencies
         cat > arch-package/pkg/.PKGINFO << 'EOF'

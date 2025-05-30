@@ -188,7 +188,7 @@ class HwYtVidGrabber(QMainWindow):
         self.checkFFmpeg()
     
     def initUI(self):
-        self.setWindowTitle("HwYtVidGrabber v1.3")
+        self.setWindowTitle("HwYtVidGrabber v1.4")
         self.setFixedSize(600, 400)
         self.setAcceptDrops(True)
         
@@ -216,7 +216,7 @@ class HwYtVidGrabber(QMainWindow):
         main_layout = QVBoxLayout(central_widget)
         
         # Create title label with clickable property
-        title_label = QLabel("HwYtVidGrabber v1.3")
+        title_label = QLabel("HwYtVidGrabber v1.4")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title_label.setStyleSheet("font-size: 20px; font-weight: bold;")
         title_label.mousePressEvent = self.titleClicked

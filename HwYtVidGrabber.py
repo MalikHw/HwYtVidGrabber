@@ -154,9 +154,9 @@ class DownloadWorker(QThread):
             
             # Set custom filename for rickroll
             if self.is_rickroll:
-                output_template = os.path.join(self.save_path, '????.%(ext)s')
+                output_template = os.path.normpath(os.path.join(self.save_path, '????.%(ext)s'))
             else:
-                output_template = os.path.join(self.save_path, '%(uploader)s - %(title)s.%(ext)s')
+                output_template = os.path.normpath(os.path.join(self.save_path, '%(uploader)s - %(title)s.%(ext)s'))
             
             ydl_opts = {
                 'format': format_str,
@@ -197,6 +197,7 @@ class HwYtVidGrabber(QMainWindow):
     def initUI(self):
         self.setWindowTitle("HwYtVidGrabber v1.2")
         self.setFixedSize(600, 400)
+        self.setAcceptDrops(True)
         
         # Set app icon
         if platform.system() == "Windows":
@@ -313,7 +314,7 @@ class HwYtVidGrabber(QMainWindow):
         main_layout.addWidget(self.status_label)
         
         # Default settings
-        self.save_path = os.path.expanduser("~/Downloads/HwYtVidGrabber/")
+        self.save_path = os.path.normpath(os.path.expanduser("~/Downloads/HwYtVidGrabber/"))
         self.dark_mode = False
         
         # Create default save directory if it doesn't exist and check permissions
@@ -346,8 +347,31 @@ class HwYtVidGrabber(QMainWindow):
             self.title_click_count = 0
     
     def updateVideoInfo(self, info):
-        self.title_label.setText(f"Title: {info.get('title', 'Unknown')}")
-        self.author_label.setText(f"Channel: {info.get('uploader', 'Unknown')}")
+        title = info.get('title', 'Unknown')
+        uploader = info.get('uploader', 'Unknown')
+    
+        self.title_label.setText(f"Title: {title}")
+        self.author_label.setText(f"Channel: {uploader}")
+    
+        # Check if channel is Hatsune Miku
+        if uploader == "Hatsune Miku":
+            self.showMikuDialog()
+
+    def showMikuDialog(self):
+        reply = QMessageBox.question(self, "Miku Question", 
+                                    "Is Miku your Waifu?",
+                                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+    
+        if reply == QMessageBox.StandardButton.Yes:
+            # Change window title to LOSER
+            self.setWindowTitle("LOSER")
+        else:
+            # Show second popup
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Just Kidding")
+            msg.setText("Nah bro just kidding")
+            cool_button = msg.addButton("Cool", QMessageBox.ButtonRole.AcceptRole)
+            msg.exec()
     
     def updateAvailableFormats(self, format_info):
         """Update resolution combo based on available formats"""
@@ -556,7 +580,7 @@ class HwYtVidGrabber(QMainWindow):
         cancel_btn = QPushButton("Cancel")
         
         def saveSettings():
-            new_path = path_input.text()
+            new_path = os.path.normpath(path_input.text())  # Add normpath here
             # Validate new path
             try:
                 if not os.path.exists(new_path):
@@ -651,9 +675,26 @@ class HwYtVidGrabber(QMainWindow):
                     font-weight: bold;
                 }
             """)
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasText():
+            text = event.mimeData().text()
+            # Check if it's a YouTube URL
+            if any(domain in text for domain in ['youtube.com', 'youtu.be', 'm.youtube.com']):
+                event.acceptProposedAction()
+            else:
+                event.ignore()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        text = event.mimeData().text().strip()
+        if text:
+            self.url_input.setText(text)
+            event.acceptProposedAction()
     
     def closeEvent(self, event):
         event.accept()
+    
 
 
 def main():

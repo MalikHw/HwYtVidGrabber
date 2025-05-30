@@ -4,6 +4,7 @@ import webbrowser
 import json
 import subprocess
 import platform
+import re
 from PyQt6.QtWidgets import *
 from PyQt6.QtGui import *
 from PyQt6.QtCore import *
@@ -33,15 +34,12 @@ class DownloadWorker(QThread):
             with YoutubeDL({'quiet': True}) as ydl:
                 info = ydl.extract_info(self.url, download=False)
                 
-                # Check if this is a rickroll
                 if self.is_rickroll:
-                    # Hide the real title and channel
                     video_info = {
                         'title': '????',
                         'uploader': '????'
                     }
                 else:
-                    # Use the real title and channel
                     video_info = {
                         'title': info.get('title', 'Unknown'),
                         'uploader': info.get('uploader', 'Unknown')
@@ -85,7 +83,6 @@ class DownloadWorker(QThread):
                     'preferredquality': '192',
                 }]
             else:
-                # Video resolution mapping - Fixed with proper format selectors
                 res_map = {
                     "144p": "best[height<=144]",
                     "360p": "best[height<=360]",
@@ -94,7 +91,7 @@ class DownloadWorker(QThread):
                     "FHD": "best[height<=1080]",
                     "2K": "best[height<=1440]",
                     "4K": "best[height<=2160]",
-                    "Max": "best"  # Best available quality
+                    "Max": "best"
                 }
                 
                 base_format = res_map.get(self.resolution, "best")
@@ -116,28 +113,26 @@ class DownloadWorker(QThread):
                         'preferedformat': 'mp4',
                     }]
             
-            # Progress hook
+            def clean_ansi(text):
+                if not text:
+                    return text
+                ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+                return ansi_escape.sub('', text)
+            
             def my_hook(d):
                 if self.is_cancelled:
                     raise Exception("Download cancelled")
                 
                 if d['status'] == 'downloading':
-                    # Extract percentage - Fix for the float conversion error
-                    p_str = d.get('_percent_str', '0%').strip()
+                    p_str = clean_ansi(d.get('_percent_str', '0%')).strip()
                     try:
                         p = float(p_str.replace('%', '')) if '%' in p_str else 0
                     except ValueError:
-                        # Handle malformed percentage strings
                         p = 0
                     
-                    # Extract speed
-                    s = d.get('_speed_str', '0KiB/s').strip()
-                    
-                    # Extract total size
-                    ts = d.get('_total_bytes_str', 'N/A')
-                    
-                    # Extract ETA
-                    eta = d.get('_eta_str', 'N/A')
+                    s = clean_ansi(d.get('_speed_str', '0KiB/s')).strip()
+                    ts = clean_ansi(d.get('_total_bytes_str', 'N/A')).strip()
+                    eta = clean_ansi(d.get('_eta_str', 'N/A')).strip()
                     
                     self.progress_signal.emit({
                         'percent': p, 
@@ -146,13 +141,11 @@ class DownloadWorker(QThread):
                         'eta': eta
                     })
                     
-                    # Handle pause
                     while self.is_paused:
                         QThread.sleep(1)
                         if self.is_cancelled:
                             raise Exception("Download cancelled")
             
-            # Set custom filename for rickroll
             if self.is_rickroll:
                 output_template = os.path.normpath(os.path.join(self.save_path, '????.%(ext)s'))
             else:
@@ -195,15 +188,27 @@ class HwYtVidGrabber(QMainWindow):
         self.checkFFmpeg()
     
     def initUI(self):
-        self.setWindowTitle("HwYtVidGrabber v1.2")
+        self.setWindowTitle("HwYtVidGrabber v1.3")
         self.setFixedSize(600, 400)
         self.setAcceptDrops(True)
         
-        # Set app icon
+        # Set app icon with Linux path checking
+        icon_path = None
         if platform.system() == "Windows":
-            self.setWindowIcon(QIcon("icon.ico"))
+            icon_path = "icon.ico"
         else:
-            self.setWindowIcon(QIcon("icon.png"))
+            possible_icon_paths = [
+                "/usr/share/pixmaps/HwYtVidGrabber.png",
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")
+            ]
+            
+            for path in possible_icon_paths:
+                if os.path.exists(path):
+                    icon_path = path
+                    break
+        
+        if icon_path:
+            self.setWindowIcon(QIcon(icon_path))
         
         # Create central widget and layout
         central_widget = QWidget()
@@ -211,7 +216,7 @@ class HwYtVidGrabber(QMainWindow):
         main_layout = QVBoxLayout(central_widget)
         
         # Create title label with clickable property
-        title_label = QLabel("HwYtVidGrabber v1.2")
+        title_label = QLabel("HwYtVidGrabber v1.3")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title_label.setStyleSheet("font-size: 20px; font-weight: bold;")
         title_label.mousePressEvent = self.titleClicked
@@ -222,7 +227,7 @@ class HwYtVidGrabber(QMainWindow):
         url_label = QLabel("YouTube URL:")
         self.url_input = QLineEdit()
         self.url_input.setPlaceholderText("Enter YouTube URL here...")
-        self.url_input.textChanged.connect(self.urlChanged)  # Add listener for URL changes
+        self.url_input.textChanged.connect(self.urlChanged)
         url_layout.addWidget(url_label)
         url_layout.addWidget(self.url_input)
         main_layout.addLayout(url_layout)
@@ -251,16 +256,12 @@ class HwYtVidGrabber(QMainWindow):
         self.res_combo.addItems(["144p", "360p", "480p", "HD", "FHD", "2K", "4K", "Max"])
         res_layout.addWidget(res_label)
         res_layout.addWidget(self.res_combo)
-        
-        # Default to Max resolution
         self.res_combo.setCurrentText("Max")
-        
-        # 60fps checkbox
         self.fps_checkbox = QCheckBox("60fps")
         res_layout.addWidget(self.fps_checkbox)
         main_layout.addLayout(res_layout)
         
-        # Download button - set to red
+        # Download button
         self.download_btn = QPushButton("Download")
         self.download_btn.setStyleSheet("background-color: #ff3333; color: white; font-weight: bold;")
         self.download_btn.clicked.connect(self.startDownload)
@@ -285,30 +286,24 @@ class HwYtVidGrabber(QMainWindow):
         self.pause_btn = QPushButton("Pause")
         self.pause_btn.clicked.connect(self.togglePause)
         self.pause_btn.setEnabled(False)
-        
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.clicked.connect(self.cancelDownload)
         self.cancel_btn.setEnabled(False)
-        
         control_layout.addWidget(self.pause_btn)
         control_layout.addWidget(self.cancel_btn)
         main_layout.addLayout(control_layout)
         
         # Bottom buttons
         bottom_layout = QHBoxLayout()
-        
         settings_btn = QPushButton("Settings")
         settings_btn.clicked.connect(self.openSettings)
-        
         support_btn = QPushButton("Support Dev")
         support_btn.clicked.connect(lambda: webbrowser.open("https://www.ko-fi.com/MalikHw47"))
-        
         bottom_layout.addWidget(settings_btn)
         bottom_layout.addWidget(support_btn)
-        
         main_layout.addLayout(bottom_layout)
         
-        # Status label for processing indication
+        # Status label
         self.status_label = QLabel("")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(self.status_label)
@@ -316,12 +311,9 @@ class HwYtVidGrabber(QMainWindow):
         # Default settings
         self.save_path = os.path.normpath(os.path.expanduser("~/Downloads/HwYtVidGrabber/"))
         self.dark_mode = False
-        
-        # Create default save directory if it doesn't exist and check permissions
         self.checkSavePathPermissions()
     
     def urlChanged(self, url):
-        """Handle URL changes to check for rickroll"""
         if "xvFZjo5PgG0" in url:
             self.title_label.setText("Title: ????")
             self.author_label.setText("Channel: ????")
@@ -331,7 +323,6 @@ class HwYtVidGrabber(QMainWindow):
             if not os.path.exists(self.save_path):
                 os.makedirs(self.save_path)
             
-            # Test if we can write to this directory
             test_file = os.path.join(self.save_path, ".write_test")
             with open(test_file, 'w') as f:
                 f.write("test")
@@ -353,7 +344,6 @@ class HwYtVidGrabber(QMainWindow):
         self.title_label.setText(f"Title: {title}")
         self.author_label.setText(f"Channel: {uploader}")
     
-        # Check if channel is Hatsune Miku
         if uploader == "Hatsune Miku":
             self.showMikuDialog()
 
@@ -363,10 +353,8 @@ class HwYtVidGrabber(QMainWindow):
                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
     
         if reply == QMessageBox.StandardButton.Yes:
-            # Change window title to LOSER
             self.setWindowTitle("LOSER")
         else:
-            # Show second popup
             msg = QMessageBox(self)
             msg.setWindowTitle("Just Kidding")
             msg.setText("Nah bro just kidding")
@@ -374,12 +362,9 @@ class HwYtVidGrabber(QMainWindow):
             msg.exec()
     
     def updateAvailableFormats(self, format_info):
-        """Update resolution combo based on available formats"""
         max_res = format_info.get('max_resolution')
-        
-        # Only adjust if user selected a resolution higher than available
         current_res = self.res_combo.currentText()
-        if current_res != "Max":  # Don't adjust if "Max" is selected
+        if current_res != "Max":
             res_hierarchy = ["144p", "360p", "480p", "HD", "FHD", "2K", "4K"]
             current_index = res_hierarchy.index(current_res) if current_res in res_hierarchy else -1
             max_index = res_hierarchy.index(max_res) if max_res in res_hierarchy else -1
@@ -394,26 +379,20 @@ class HwYtVidGrabber(QMainWindow):
             QMessageBox.warning(self, "Error", "Please enter a YouTube URL!")
             return
         
-        # Disable download button to prevent multiple downloads
         self.download_btn.setEnabled(False)
-        
-        # Show processing status
         self.status_label.setText("Processing...")
         
         format_option = self.format_combo.currentText()
         resolution = self.res_combo.currentText()
         fps_60 = self.fps_checkbox.isChecked()
         
-        # Check again if save directory exists and is writable
         self.checkSavePathPermissions()
         
-        # Reset progress indicators
         self.progress_bar.setValue(0)
         self.speed_label.setText("Speed: -")
         self.size_label.setText("Size: -")
         self.eta_label.setText("ETA: -")
         
-        # Create and start download worker
         self.download_worker = DownloadWorker(url, self.save_path, format_option, resolution, fps_60)
         self.download_worker.progress_signal.connect(self.updateProgress)
         self.download_worker.finished_signal.connect(self.downloadFinished)
@@ -423,22 +402,18 @@ class HwYtVidGrabber(QMainWindow):
         
         self.download_worker.start()
         
-        # Update UI state
         self.pause_btn.setEnabled(True)
         self.pause_btn.setText("Pause")
         self.cancel_btn.setEnabled(True)
     
     def updateProgress(self, progress_info):
-        # Clear the processing message once download starts
         self.status_label.setText("")
         
-        # Make sure percentage is a valid number
         try:
             percent = int(progress_info['percent'])
-            if 0 <= percent <= 100:  # Ensure percentage is in valid range
+            if 0 <= percent <= 100:
                 self.progress_bar.setValue(percent)
         except (ValueError, TypeError):
-            # If conversion fails, don't update progress bar
             pass
             
         self.speed_label.setText(f"Speed: {progress_info['speed']}")
@@ -493,24 +468,56 @@ class HwYtVidGrabber(QMainWindow):
     
     def checkFFmpeg(self):
         try:
-            # Try to run ffmpeg
+            if platform.system() == "Windows":
+                if getattr(sys, 'frozen', False):
+                    exe_dir = os.path.dirname(sys.executable)
+                else:
+                    exe_dir = os.path.dirname(os.path.abspath(__file__))
+                
+                ffmpeg_path = os.path.join(exe_dir, "ffmpeg.exe")
+                
+                if os.path.exists(ffmpeg_path):
+                    os.environ['PATH'] = exe_dir + os.pathsep + os.environ['PATH']
+                else:
+                    reply = QMessageBox.question(
+                        self, 
+                        "FFmpeg Not Found",
+                        "FFmpeg is required but not found in the application directory.\n"
+                        "Do you want to download and extract ffmpeg.exe to this directory?\n"
+                        f"Directory: {exe_dir}",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                    )
+                    
+                    if reply == QMessageBox.StandardButton.Yes:
+                        webbrowser.open("https://www.gyan.dev/ffmpeg/builds/ffmpeg-git-essentials.7z")
+                        QMessageBox.information(
+                            self,
+                            "Instructions",
+                            "Please download ffmpeg-git-essentials.7z from the opened link,\n"
+                            "extract it, and place ffmpeg.exe in this directory:\n"
+                            f"{exe_dir}\n\n"
+                            "Then restart the application."
+                        )
+                        sys.exit(1)
+                    else:
+                        QMessageBox.warning(
+                            self,
+                            "FFmpeg Required",
+                            "The application cannot function without FFmpeg.\n"
+                            "Please install ffmpeg.exe in the application directory."
+                        )
+                        sys.exit(1)
+            
             result = subprocess.run(["ffmpeg", "-version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if result.returncode != 0:
                 raise Exception("FFmpeg returned non-zero exit code")
-        except Exception:
-            # FFmpeg not found
-            if platform.system() == "Windows":
-                reply = QMessageBox.question(self, "FFmpeg Not Found",
-                                     "FFmpeg is not installed. Do you want to download it?",
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-                if reply == QMessageBox.StandardButton.Yes:
-                    webbrowser.open("https://ffmpeg.org/download.html")
-            else:
+                
+        except Exception as e:
+            if platform.system() != "Windows":
                 reply = QMessageBox.question(self, "FFmpeg Not Found",
                                      "FFmpeg is not installed. Do you want to install it now?",
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
                 if reply == QMessageBox.StandardButton.Yes:
-                    # Use distro detection that works on Python 3.8+
                     if platform.system() == "Linux":
                         try:
                             with open("/etc/os-release", "r") as f:
@@ -530,13 +537,14 @@ class HwYtVidGrabber(QMainWindow):
                     
                     try:
                         os.system(f"x-terminal-emulator -e '{cmd}'")
-                        # Check if installation was successful
                         self.checkFFmpegAfterInstall()
                     except Exception as e:
                         QMessageBox.warning(self, "Error", f"Failed to launch terminal: {str(e)}")
-    
+            else:
+                QMessageBox.warning(self, "FFmpeg Error", f"FFmpeg is not working: {str(e)}")
+                sys.exit(1)
+
     def checkFFmpegAfterInstall(self):
-        # Wait a bit for installation to complete
         QTimer.singleShot(5000, lambda: self._checkFFmpegInstalled())
     
     def _checkFFmpegInstalled(self):
@@ -580,8 +588,7 @@ class HwYtVidGrabber(QMainWindow):
         cancel_btn = QPushButton("Cancel")
         
         def saveSettings():
-            new_path = os.path.normpath(path_input.text())  # Add normpath here
-            # Validate new path
+            new_path = os.path.normpath(path_input.text())
             try:
                 if not os.path.exists(new_path):
                     os.makedirs(new_path)
@@ -602,7 +609,6 @@ class HwYtVidGrabber(QMainWindow):
         
         save_btn.clicked.connect(saveSettings)
         cancel_btn.clicked.connect(dialog.reject)
-        
         btn_layout.addWidget(save_btn)
         btn_layout.addWidget(cancel_btn)
         layout.addLayout(btn_layout)
@@ -667,7 +673,6 @@ class HwYtVidGrabber(QMainWindow):
                 }
             """)
         else:
-            # Still keep download button red even in light mode
             self.setStyleSheet("""
                 QPushButton#download_btn {
                     background-color: #ff3333;
@@ -675,10 +680,10 @@ class HwYtVidGrabber(QMainWindow):
                     font-weight: bold;
                 }
             """)
+    
     def dragEnterEvent(self, event):
         if event.mimeData().hasText():
             text = event.mimeData().text()
-            # Check if it's a YouTube URL
             if any(domain in text for domain in ['youtube.com', 'youtu.be', 'm.youtube.com']):
                 event.acceptProposedAction()
             else:
@@ -694,7 +699,6 @@ class HwYtVidGrabber(QMainWindow):
     
     def closeEvent(self, event):
         event.accept()
-    
 
 
 def main():

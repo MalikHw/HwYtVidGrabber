@@ -395,7 +395,9 @@ jobs:
       id: get_version
       run: |
         if [[ $GITHUB_REF == refs/tags/* ]]; then
-          VERSION=${GITHUB_REF#refs/tags/v}
+          # Remove 'refs/tags/' prefix and any 'v' prefix
+          VERSION=${GITHUB_REF#refs/tags/}
+          VERSION=${VERSION#v}  # Remove leading 'v' if present
           echo "version=$VERSION" >> $GITHUB_OUTPUT
         else
           echo "version=0.0.0" >> $GITHUB_OUTPUT

@@ -430,10 +430,10 @@ jobs:
         
         # Update version in setup files if they exist
         if [ -f "pypi-build/setup.py" ]; then
-          sed -i "s/version=\"[^\"]*\"/version=\"${{ steps.get_version.outputs.version }}\"/g" pypi-build/setup.py
+          sed -i "s|version=\"[^\"]*\"|version=\"${{ steps.get_version.outputs.version }}\"|g" pypi-build/setup.py
         fi
         if [ -f "pypi-build/pyproject.toml" ]; then
-          sed -i "s/version = \"[^\"]*\"/version = \"${{ steps.get_version.outputs.version }}\"/g" pypi-build/pyproject.toml
+          sed -i "s|version = \"[^\"]*\"|version = \"${{ steps.get_version.outputs.version }}\"|g" pypi-build/pyproject.toml
         fi
         
         # If no setup files exist in PyPI folder, use the ones from repo root

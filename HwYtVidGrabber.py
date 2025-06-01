@@ -28,8 +28,39 @@ class DownloadWorker(QThread):
         self.is_cancelled = False
         self.is_rickroll = "xvFZjo5PgG0" in url
         
+    def get_proper_download_path(self):
+        """Get the proper download path based on OS and format"""
+        if platform.system() == "Windows":
+            # Windows path
+            base_path = os.path.join(os.path.expanduser("~"), "Downloads", "HwYtVidGrabber")
+        else:
+            # Linux/Unix path
+            base_path = os.path.join(os.path.expanduser("~"), "Downloads", "HwYtVidGrabber")
+        
+        # Add subfolder based on format
+        if self.format_option == "mp3":
+            subfolder = "Audios"
+        else:
+            subfolder = "Videos"
+            
+        final_path = os.path.join(base_path, subfolder)
+        
+        # Create directory if it doesn't exist
+        try:
+            os.makedirs(final_path, exist_ok=True)
+        except Exception as e:
+            print(f"Error creating directory {final_path}: {e}")
+            # Fallback to base path if subfolder creation fails
+            os.makedirs(base_path, exist_ok=True)
+            final_path = base_path
+            
+        return final_path
+        
     def run(self):
         try:
+            # Get the proper download path
+            actual_save_path = self.get_proper_download_path()
+            
             # First fetch video info
             with YoutubeDL({'quiet': True}) as ydl:
                 info = ydl.extract_info(self.url, download=False)
@@ -147,9 +178,9 @@ class DownloadWorker(QThread):
                             raise Exception("Download cancelled")
             
             if self.is_rickroll:
-                output_template = os.path.normpath(os.path.join(self.save_path, '????.%(ext)s'))
+                output_template = os.path.join(actual_save_path, '????.%(ext)s')
             else:
-                output_template = os.path.normpath(os.path.join(self.save_path, '%(uploader)s - %(title)s.%(ext)s'))
+                output_template = os.path.join(actual_save_path, '%(uploader)s - %(title)s.%(ext)s')
             
             ydl_opts = {
                 'format': format_str,
@@ -188,7 +219,7 @@ class HwYtVidGrabber(QMainWindow):
         self.checkFFmpeg()
     
     def initUI(self):
-        self.setWindowTitle("HwYtVidGrabber v1.4")
+        self.setWindowTitle("HwYtVidGrabber v1.4.1")
         self.setFixedSize(600, 400)
         self.setAcceptDrops(True)
         
@@ -216,7 +247,7 @@ class HwYtVidGrabber(QMainWindow):
         main_layout = QVBoxLayout(central_widget)
         
         # Create title label with clickable property
-        title_label = QLabel("HwYtVidGrabber v1.4")
+        title_label = QLabel("HwYtVidGrabber v1.4.1")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title_label.setStyleSheet("font-size: 20px; font-weight: bold;")
         title_label.mousePressEvent = self.titleClicked
@@ -309,7 +340,10 @@ class HwYtVidGrabber(QMainWindow):
         main_layout.addWidget(self.status_label)
         
         # Default settings
-        self.save_path = os.path.normpath(os.path.expanduser("~/Downloads/HwYtVidGrabber/"))
+        if platform.system() == "Windows":
+            self.save_path = os.path.join(os.path.expanduser("~"), "Downloads", "HwYtVidGrabber")
+        else:
+            self.save_path = os.path.join(os.path.expanduser("~"), "Downloads", "HwYtVidGrabber")
         self.dark_mode = False
         self.checkSavePathPermissions()
     
@@ -475,14 +509,19 @@ class HwYtVidGrabber(QMainWindow):
                     exe_dir = os.path.dirname(os.path.abspath(__file__))
                 
                 ffmpeg_path = os.path.join(exe_dir, "ffmpeg.exe")
+                c_drive_ffmpeg = "C:\\ffmpeg.exe"
                 
+                # Check if ffmpeg exists in application directory
                 if os.path.exists(ffmpeg_path):
                     os.environ['PATH'] = exe_dir + os.pathsep + os.environ['PATH']
+                # Check if ffmpeg exists at C:\ffmpeg.exe
+                elif os.path.exists(c_drive_ffmpeg):
+                    os.environ['PATH'] = "C:\\" + os.pathsep + os.environ['PATH']
                 else:
                     reply = QMessageBox.question(
                         self, 
                         "FFmpeg Not Found",
-                        "FFmpeg is required but not found in the application directory.\n"
+                        "FFmpeg is required but not found in the application directory or at C:\\ffmpeg.exe.\n"
                         "Do you want to download and extract ffmpeg.exe to this directory?\n"
                         f"Directory: {exe_dir}",
                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
@@ -494,8 +533,10 @@ class HwYtVidGrabber(QMainWindow):
                             self,
                             "Instructions",
                             "Please download ffmpeg-git-essentials.7z from the opened link,\n"
-                            "extract it, and place ffmpeg.exe in this directory:\n"
-                            f"{exe_dir}\n\n"
+                            "extract it, and place ffmpeg.exe in one of these directories:\n"
+                            f"{exe_dir}\n"
+                            "OR\n"
+                            "C:\\ffmpeg.exe\n\n"
                             "Then restart the application."
                         )
                         sys.exit(1)
@@ -504,7 +545,7 @@ class HwYtVidGrabber(QMainWindow):
                             self,
                             "FFmpeg Required",
                             "The application cannot function without FFmpeg.\n"
-                            "Please install ffmpeg.exe in the application directory."
+                            "Please install ffmpeg.exe in the application directory or at C:\\ffmpeg.exe"
                         )
                         sys.exit(1)
             

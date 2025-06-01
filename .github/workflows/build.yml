@@ -213,7 +213,7 @@ jobs:
           - Multiple format support (MP4, MP3, muted MP4)
           - Resolution selection up to 4K
           - Dark mode support
-        Homepage: https://github.com/MalikHw/HwYtVidGrabber
+        Homepage: https://github.com/MalikHw47/HwYtVidGrabber
         EOF
         
         # Create postinst script to create venv and install yt-dlp
@@ -381,8 +381,101 @@ jobs:
         name: linux-arch
         path: HwYtVidGrabber.pkg.tar.gz
 
+  build-pypi:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Extract version from tag
+      id: get_version
+      run: |
+        if [[ $GITHUB_REF == refs/tags/* ]]; then
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+        else
+          echo "version=0.0.0" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Prepare PyPI package structure
+      run: |
+        # Create a temporary directory for PyPI package
+        mkdir -p pypi-build
+        
+        # Copy PyPI folder contents if it exists
+        if [ -d "PyPI" ]; then
+          cp -r PyPI/* pypi-build/
+        fi
+        
+        # Copy the main Python file to the PyPI build directory
+        cp HwYtVidGrabber.py pypi-build/
+        
+        # Copy additional required files
+        if [ -f "README.md" ]; then
+          cp README.md pypi-build/
+        fi
+        if [ -f "LICENSE" ]; then
+          cp LICENSE pypi-build/
+        fi
+        if [ -f "icon.png" ]; then
+          cp icon.png pypi-build/
+        fi
+        if [ -f "icon.ico" ]; then
+          cp icon.ico pypi-build/
+        fi
+        
+        # Update version in setup files if they exist
+        if [ -f "pypi-build/setup.py" ]; then
+          sed -i "s/version=\"[^\"]*\"/version=\"${{ steps.get_version.outputs.version }}\"/g" pypi-build/setup.py
+        fi
+        if [ -f "pypi-build/pyproject.toml" ]; then
+          sed -i "s/version = \"[^\"]*\"/version = \"${{ steps.get_version.outputs.version }}\"/g" pypi-build/pyproject.toml
+        fi
+        
+        # If no setup files exist in PyPI folder, use the ones from repo root
+        if [ ! -f "pypi-build/setup.py" ] && [ -f "setup.py" ]; then
+          cp setup.py pypi-build/
+          sed -i "s/version=\"[^\"]*\"/version=\"${{ steps.get_version.outputs.version }}\"/g" pypi-build/setup.py
+        fi
+        if [ ! -f "pypi-build/pyproject.toml" ] && [ -f "pyproject.toml" ]; then
+          cp pyproject.toml pypi-build/
+          sed -i "s/version = \"[^\"]*\"/version = \"${{ steps.get_version.outputs.version }}\"/g" pypi-build/pyproject.toml
+        fi
+        
+        ls -la pypi-build/
+    
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine wheel setuptools
+    
+    - name: Build PyPI packages
+      run: |
+        cd pypi-build
+        python -m build
+        ls -la dist/
+    
+    - name: Upload PyPI artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: pypi-packages
+        path: pypi-build/dist/*
+    
+    - name: Publish to PyPI
+      if: startsWith(github.ref, 'refs/tags/')
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      run: |
+        cd pypi-build
+        python -m twine upload dist/* --verbose
+
   create-release:
-    needs: [build-windows, build-macos, build-linux-packages]
+    needs: [build-windows, build-macos, build-linux-packages, build-pypi]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
@@ -397,6 +490,8 @@ jobs:
           macos-dmg/HwYtVidGrabber.dmg
           linux-deb/HwYtVidGrabber.deb
           linux-arch/HwYtVidGrabber.pkg.tar.gz
+          pypi-packages/*.whl
+          pypi-packages/*.tar.gz
         draft: false
         prerelease: false
       env:

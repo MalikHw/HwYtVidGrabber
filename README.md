@@ -37,6 +37,13 @@ and done :)
 
 install HwYtVidGrabber.deb(Debian/Ubuntu) or HwYtVidGrabber.pkg.tar.gz(Arch)
 
+### MacOS
+
+... Mount HwYtVidGrabber.dmg, move the HwYtVidGrabber.app to ur Applications folder ;)
+
+### using pip (yep)
+
+`pip install hwyvidgrabber==1.5` (this command will be updated everytime a new version is released)
 
 ## Usage
 

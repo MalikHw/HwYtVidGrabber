@@ -408,8 +408,34 @@ jobs:
         # Copy existing PyPI setup files
         cp -r PyPI/* .
         
-        # Update version in setup.py using the extracted version
-        sed -i "s/version=['\"][^'\"]*['\"]/version=\"${{ steps.get_version.outputs.version }}\"/g" setup.py
+        VERSION="${{ steps.get_version.outputs.version }}"
+        echo "Updating to version: $VERSION"
+        
+        # Update version in setup.py (handle multiple formats)
+        if [ -f setup.py ]; then
+          echo "Updating setup.py..."
+          # Try different version patterns
+          sed -i "s/version=['\"][^'\"]*['\"]/version=\"$VERSION\"/g" setup.py || true
+          sed -i "s/version = ['\"][^'\"]*['\"]/version = \"$VERSION\"/g" setup.py || true
+          sed -i "s/version=['\"][0-9\.]*['\"]/version=\"$VERSION\"/g" setup.py || true
+          # Show what we updated
+          grep -n "version" setup.py || echo "No version found in setup.py"
+        fi
+        
+        # Update version in pyproject.toml if it exists
+        if [ -f pyproject.toml ]; then
+          echo "Updating pyproject.toml..."
+          # Try different version patterns for TOML
+          sed -i "s/version = ['\"][^'\"]*['\"]/version = \"$VERSION\"/g" pyproject.toml || true
+          sed -i "s/version=['\"][^'\"]*['\"]/version=\"$VERSION\"/g" pyproject.toml || true
+          sed -i "s/version = ['\"][0-9\.]*['\"]/version = \"$VERSION\"/g" pyproject.toml || true
+          # Show what we updated
+          grep -n "version" pyproject.toml || echo "No version found in pyproject.toml"
+        fi
+        
+        # Show current directory contents
+        echo "Files in current directory:"
+        ls -la
         
         # Ensure main Python file and icons are available for packaging
         if [ ! -f HwYtVidGrabber.py ]; then

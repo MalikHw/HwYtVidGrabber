@@ -3,8 +3,12 @@ import os
 
 # Read the contents of your README file
 this_directory = os.path.abspath(os.path.dirname(__file__))
-with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
+with open(os.path.join(this_directory, '..', 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
+
+# Read the LICENSE file
+with open(os.path.join(this_directory, 'LICENSE'), encoding='utf-8') as f:
+    license_content = f.read()
 
 setup(
     name="hwytvidgrabber",
@@ -16,8 +20,7 @@ setup(
     author_email="help.malicorporation@gmail.com",
     url="https://github.com/MalikHw/HwYtVidGrabber",
     license="MIT",
-    packages=find_packages(where="PyPI"),
-    package_dir={"": "PyPI"},
+    packages=find_packages(),
     py_modules=["HwYtVidGrabber"],
     classifiers=[
         "Development Status :: 4 - Beta",
@@ -45,6 +48,8 @@ setup(
             "pytest>=7.0.0",
             "black>=22.0.0",
             "flake8>=4.0.0",
+            "twine>=4.0.0",
+            "build>=0.8.0",
         ],
     },
     entry_points={
@@ -59,6 +64,9 @@ setup(
     package_data={
         "HwYtVidGrabber": ["*.png", "*.ico"],
     },
+    data_files=[
+        ("", ["LICENSE"]),
+    ],
     project_urls={
         "Bug Reports": "https://github.com/MalikHw/HwYtVidGrabber/issues",
         "Source": "https://github.com/MalikHw/HwYtVidGrabber",

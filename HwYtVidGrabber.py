@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import *
 from PyQt6.QtGui import *
 from PyQt6.QtCore import *
 from yt_dlp import YoutubeDL
+import pkg_resources
 
 class DownloadWorker(QThread):
     progress_signal = pyqtSignal(dict)
@@ -224,7 +225,7 @@ class HwYtVidGrabber(QMainWindow):
         self.setAcceptDrops(True)
         
         # Set app icon with Linux path checking
-        icon_path = None
+        icon_path = pkg_resources.resource_filename('HwYtVidGrabber', 'icon.png')
         if platform.system() == "Windows":
             icon_path = "icon.ico"
         else:

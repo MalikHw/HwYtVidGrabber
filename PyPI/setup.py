@@ -8,7 +8,7 @@ with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name="hwytvidgrabber",
-    version="1.4.1",
+    version="1.4.2",
     description="A YouTube downloader app with GUI",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -16,8 +16,9 @@ setup(
     author_email="help.malicorporation@gmail.com",
     url="https://github.com/MalikHw/HwYtVidGrabber",
     license="MIT",
-    packages=find_packages(),
-    py_modules=["hwyvidgrabber"],
+    packages=find_packages(where="PyPI"),
+    package_dir={"": "PyPI"},
+    py_modules=["HwYtVidGrabber"],
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: End Users/Desktop",
@@ -48,15 +49,15 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "hwyvidgrabber=HwYtVidGrabber:main",
+            "hwytvidgrabber=HwYtVidGrabber:main",
         ],
         "gui_scripts": [
-            "hwyvidgrabber-gui=HwYtVidGrabber:main",
+            "hwytvidgrabber-gui=HwYtVidGrabber:main",
         ],
     },
     include_package_data=True,
     package_data={
-        "": ["*.png", "*.ico", "*.md", "LICENSE"],
+        "HwYtVidGrabber": ["*.png", "*.ico"],
     },
     project_urls={
         "Bug Reports": "https://github.com/MalikHw/HwYtVidGrabber/issues",

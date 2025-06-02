@@ -408,27 +408,30 @@ jobs:
         # Create a temporary directory for PyPI package
         mkdir -p pypi-build
         
-        # Copy PyPI folder contents if it exists
-        if [ -d "PyPI" ]; then
-          cp -r PyPI/* pypi-build/
-        fi
+        # Create PyPI package structure
+        mkdir -p pypi-build/HwYtVidGrabber
         
-        # Copy the main Python file to the PyPI build directory
-        cp HwYtVidGrabber.py pypi-build/
+        # Copy the main Python file to the PyPI package directory
+        cp HwYtVidGrabber.py pypi-build/HwYtVidGrabber/__init__.py
         
-        # Copy additional required files
+        # Copy icons to package directory
+        cp icon.png pypi-build/HwYtVidGrabber/
+        cp icon.ico pypi-build/HwYtVidGrabber/
+        
+        # Copy other required files
         if [ -f "README.md" ]; then
           cp README.md pypi-build/
         fi
         if [ -f "LICENSE" ]; then
           cp LICENSE pypi-build/
         fi
-        if [ -f "icon.png" ]; then
-          cp icon.png pypi-build/
-        fi
-        if [ -f "icon.ico" ]; then
-          cp icon.ico pypi-build/
-        fi
+        
+        # Copy setup files
+        cp setup.py pypi-build/
+        cp pyproject.toml pypi-build/
+        
+        # Verify structure
+        tree pypi-build/
         
         # Update version in setup files if they exist
         if [ -f "pypi-build/setup.py" ]; then

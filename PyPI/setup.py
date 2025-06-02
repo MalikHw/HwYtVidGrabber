@@ -1,14 +1,42 @@
 from setuptools import setup, find_packages
 import os
 
-# Read the contents of your README file
+# Read the contents of your README file with fallback
 this_directory = os.path.abspath(os.path.dirname(__file__))
-with open(os.path.join(this_directory, '..', 'README.md'), encoding='utf-8') as f:
-    long_description = f.read()
 
-# Read the LICENSE file
-with open(os.path.join(this_directory, 'LICENSE'), encoding='utf-8') as f:
-    license_content = f.read()
+# Try multiple possible locations for README.md
+readme_paths = [
+    os.path.join(this_directory, '..', 'README.md'),  # One level up
+    os.path.join(this_directory, '..', '..', 'README.md'),  # Two levels up
+    os.path.join(this_directory, 'README.md'),  # Same directory
+]
+
+long_description = "A YouTube downloader app with GUI"  # Fallback description
+
+for readme_path in readme_paths:
+    if os.path.exists(readme_path):
+        try:
+            with open(readme_path, encoding='utf-8') as f:
+                long_description = f.read()
+            break
+        except Exception:
+            continue
+
+# Try to read LICENSE file
+license_content = "MIT"
+license_paths = [
+    os.path.join(this_directory, 'LICENSE'),
+    os.path.join(this_directory, '..', 'LICENSE'),
+]
+
+for license_path in license_paths:
+    if os.path.exists(license_path):
+        try:
+            with open(license_path, encoding='utf-8') as f:
+                license_content = f.read()
+            break
+        except Exception:
+            continue
 
 setup(
     name="hwytvidgrabber",
@@ -64,9 +92,6 @@ setup(
     package_data={
         "HwYtVidGrabber": ["*.png", "*.ico"],
     },
-    data_files=[
-        ("", ["LICENSE"]),
-    ],
     project_urls={
         "Bug Reports": "https://github.com/MalikHw/HwYtVidGrabber/issues",
         "Source": "https://github.com/MalikHw/HwYtVidGrabber",

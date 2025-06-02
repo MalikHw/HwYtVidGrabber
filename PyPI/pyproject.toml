@@ -6,9 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "hwytvidgrabber"
 version = "1.4.2"
 description = "A YouTube downloader app with GUI"
-readme = "README.md"
+readme = "../README.md"
 requires-python = ">=3.8"
-license = {text = "MIT"}
+license = {file = "LICENSE"}
 authors = [
     {name = "MalikHw", email = "help.malicorporation@gmail.com"}
 ]
@@ -55,8 +55,11 @@ Source = "https://github.com/MalikHw/HwYtVidGrabber"
 Funding = "https://www.ko-fi.com/MalikHw47"
 
 [tool.setuptools.packages.find]
-where = ["PyPI"]
 include = ["HwYtVidGrabber"]
 
 [tool.setuptools.package-data]
 "HwYtVidGrabber" = ["*.png", "*.ico"]
+
+# Include additional files in the source distribution
+[tool.setuptools]
+include-package-data = true

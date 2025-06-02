@@ -403,75 +403,23 @@ jobs:
           echo "version=1.4.2" >> $GITHUB_OUTPUT
         fi
     
-    - name: Create PyPI package structure
+    - name: Setup PyPI package structure
       run: |
-        # Create package directory structure
-        mkdir -p hwytvidgrabber
+        # Copy existing PyPI setup files
+        cp -r PyPI/* .
         
-        # Copy main Python file and rename it to __init__.py
-        cp HwYtVidGrabber.py hwytvidgrabber/__init__.py
+        # Update version in setup.py using the extracted version
+        sed -i "s/version=['\"][^'\"]*['\"]/version=\"${{ steps.get_version.outputs.version }}\"/g" setup.py
         
-        # Add main function to the end of __init__.py if it doesn't exist
-        if ! grep -q "def main(" hwytvidgrabber/__init__.py; then
-          cat >> hwytvidgrabber/__init__.py << 'EOF'
-
-def main():
-    """Entry point for the application."""
-    import sys
-    from PyQt6.QtWidgets import QApplication
-    
-    app = QApplication(sys.argv)
-    # Your main window class should be imported/created here
-    # Assuming your main window class is defined in the same file
-    # You'll need to replace this with your actual main window class
-    try:
-        # Try to find and instantiate the main window class
-        import inspect
-        current_module = sys.modules[__name__]
-        
-        # Look for QMainWindow subclass
-        from PyQt6.QtWidgets import QMainWindow
-        for name, obj in inspect.getmembers(current_module, inspect.isclass):
-            if issubclass(obj, QMainWindow) and obj != QMainWindow:
-                window = obj()
-                window.show()
-                sys.exit(app.exec())
-                
-        # If no QMainWindow found, look for QWidget
-        from PyQt6.QtWidgets import QWidget
-        for name, obj in inspect.getmembers(current_module, inspect.isclass):
-            if issubclass(obj, QWidget) and obj != QWidget:
-                window = obj()
-                window.show()
-                sys.exit(app.exec())
-                
-    except Exception as e:
-        print(f"Error starting application: {e}")
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main()
-EOF
+        # Ensure main Python file and icons are available for packaging
+        if [ ! -f HwYtVidGrabber.py ]; then
+            echo "Error: HwYtVidGrabber.py not found!"
+            exit 1
         fi
         
-        # Copy icon files to the package
-        cp icon.png hwytvidgrabber/ 2>/dev/null || echo "icon.png not found, skipping"
-        cp icon.ico hwytvidgrabber/ 2>/dev/null || echo "icon.ico not found, skipping"
-        
-        # Create __init__.py to make it a proper package
-        touch hwytvidgrabber/__init__.py
-        
-        # Create MANIFEST.in to include data files
-        cat > MANIFEST.in << 'EOF'
-include README.md
-include LICENSE
-include hwytvidgrabber/*.png
-include hwytvidgrabber/*.ico
-recursive-include hwytvidgrabber *
-EOF
-        
-        # Update version in setup.py
-        sed -i "s/version=\"[^\"]*\"/version=\"${{ steps.get_version.outputs.version }}\"/g" setup.py
+        # Copy icons if they exist
+        cp icon.png . 2>/dev/null || echo "icon.png not found, skipping"
+        cp icon.ico . 2>/dev/null || echo "icon.ico not found, skipping"
     
     - name: Install build dependencies
       run: |

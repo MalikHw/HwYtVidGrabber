@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "hwyvidgrabber"
+name = "hwytvidgrabber"
 version = "1.4.1"
 description = "A YouTube downloader app with GUI"
 readme = "README.md"

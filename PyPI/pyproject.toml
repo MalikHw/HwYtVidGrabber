@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "hwytvidgrabber"
 version = "1.4.2"
 description = "A YouTube downloader app with GUI"
-readme = "../README.md"
+readme = {file = "../README.md", content-type = "text/markdown"}
 requires-python = ">=3.8"
 license = {file = "LICENSE"}
 authors = [

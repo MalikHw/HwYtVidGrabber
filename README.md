@@ -43,7 +43,7 @@ install HwYtVidGrabber.deb(Debian/Ubuntu) or HwYtVidGrabber.pkg.tar.gz(Arch)
 
 ### using pip (yep)
 
-`pip install hwyvidgrabber==1.5` (this command will be updated everytime a new version is released)
+`pip install hwytvidgrabber`
 
 ## Usage
 

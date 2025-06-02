@@ -7,7 +7,7 @@ with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
-    name="hwyvidgrabber",
+    name="hwytvidgrabber",
     version="1.4.1",
     description="A YouTube downloader app with GUI",
     long_description=long_description,

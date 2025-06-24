@@ -373,17 +373,24 @@ jobs:
     
     - name: Download all artifacts
       uses: actions/download-artifact@v4
+
+    - name: MoveDaArtiFaktsToRelesRot
+      run: |
+        mv linux-binary/* .
+        mv linux-deb/* .
+        mv macos-dmg/* .
+        mv windows-exe/* .
     
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          windows-exe/HwYtVidGrabber-win.exe
-          macos-dmg/HwYtVidGrabber-Darwin.dmg
-          linux-binary/HwYtVidGrabber-Linux
-          linux-binary/hwytvidgrabber.desktop
-          linux-binary/icon.png
-          linux-deb/HwYtVidGrabber-debian.deb
+          HwYtVidGrabber-win.exe
+          HwYtVidGrabber-Darwin.dmg
+          HwYtVidGrabber-Linux
+          hwytvidgrabber.desktop
+          icon.png
+          HwYtVidGrabber-debian.deb
         draft: false
         prerelease: false
       env:

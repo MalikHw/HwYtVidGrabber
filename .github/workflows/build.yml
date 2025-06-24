@@ -138,6 +138,10 @@ jobs:
 
   build-linux-binary:
     runs-on: ubuntu-latest
+    outputs:
+      linux-binary-sha256: ${{ steps.hash.outputs.sha256 }}
+      desktop-file-sha256: ${{ steps.desktop-hash.outputs.sha256 }}
+      icon-sha256: ${{ steps.icon-hash.outputs.sha256 }}
     steps:
     - uses: actions/checkout@v4
     
@@ -164,67 +168,105 @@ jobs:
         --name=HwYtVidGrabber-Linux \
         HwYtVidGrabber.py
     
+    - name: Generate desktop file
+      run: |
+        cat > hwytvidgrabber.desktop << 'EOF'
+        [Desktop Entry]
+        Name=HwYtVidGrabber
+        Comment=YouTube Video Downloader by MalikHw47
+        Exec=HwYtVidGrabber-Linux
+        Icon=hwytvidgrabber
+        Terminal=false
+        Type=Application
+        Categories=AudioVideo;Network;Video;
+        StartupWMClass=HwYtVidGrabber
+        Keywords=youtube;video;download;grabber;
+        MimeType=text/uri-list;x-scheme-handler/http;x-scheme-handler/https;
+        EOF
+    
+    - name: Calculate SHA256 hashes
+      id: hash
+      run: |
+        BINARY_SHA256=$(sha256sum dist/HwYtVidGrabber-Linux | cut -d' ' -f1)
+        echo "sha256=$BINARY_SHA256" >> $GITHUB_OUTPUT
+        echo "Linux binary SHA256: $BINARY_SHA256"
+    
+    - name: Calculate desktop file SHA256
+      id: desktop-hash
+      run: |
+        DESKTOP_SHA256=$(sha256sum hwytvidgrabber.desktop | cut -d' ' -f1)
+        echo "sha256=$DESKTOP_SHA256" >> $GITHUB_OUTPUT
+        echo "Desktop file SHA256: $DESKTOP_SHA256"
+    
+    - name: Calculate icon SHA256
+      id: icon-hash
+      run: |
+        ICON_SHA256=$(sha256sum icon.png | cut -d' ' -f1)
+        echo "sha256=$ICON_SHA256" >> $GITHUB_OUTPUT
+        echo "Icon SHA256: $ICON_SHA256"
+    
     - name: Upload Linux binary artifact
       uses: actions/upload-artifact@v4
       with:
         name: linux-binary
-        path: dist/HwYtVidGrabber-Linux
+        path: |
+          dist/HwYtVidGrabber-Linux
+          hwytvidgrabber.desktop
+          icon.png
 
   build-linux-packages:
     runs-on: ubuntu-latest
+    needs: build-linux-binary
     steps:
     - uses: actions/checkout@v4
+    
+    - name: Download Linux binary artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: linux-binary
+        path: artifacts/
     
     - name: Install packaging tools
       run: |
         sudo apt-get update
         sudo apt-get install -y debhelper dh-python devscripts fakeroot
     
-    - name: Create lightweight DEB package
+    - name: Create DEB package based on binary
       run: |
-        # Verify icon.png exists in the repo root
-        if [ ! -f icon.png ]; then
-            echo "Error: icon.png not found in repository root!"
+        # Verify required files exist
+        if [ ! -f artifacts/HwYtVidGrabber-Linux ]; then
+            echo "Error: HwYtVidGrabber-Linux binary not found!"
+            exit 1
+        fi
+        if [ ! -f artifacts/icon.png ]; then
+            echo "Error: icon.png not found!"
             exit 1
         fi
         
-        # Build .deb package with ONLY Python file
+        # Build .deb package with binary
         mkdir -p deb-package/DEBIAN
-        mkdir -p deb-package/opt/HwYtVidGrabber
         mkdir -p deb-package/usr/bin
         mkdir -p deb-package/usr/share/applications
         mkdir -p deb-package/usr/share/pixmaps
         mkdir -p deb-package/usr/share/doc/HwYtVidGrabber
         
-        # Copy ONLY the Python source file and icons
-        cp HwYtVidGrabber.py deb-package/opt/HwYtVidGrabber/
-        cp icon.png deb-package/opt/HwYtVidGrabber/
-        cp icon.ico deb-package/opt/HwYtVidGrabber/
+        # Copy the binary and make it executable
+        cp artifacts/HwYtVidGrabber-Linux deb-package/usr/bin/HwYtVidGrabber-Linux
+        chmod +x deb-package/usr/bin/HwYtVidGrabber-Linux
         
-        # Copy icon to pixmaps directory with proper name
-        cp icon.png deb-package/usr/share/pixmaps/HwYtVidGrabber.png
+        # Create symlink for easier access
+        ln -s HwYtVidGrabber-Linux deb-package/usr/bin/HwYtVidGrabber
         
-        # Create wrapper script that uses virtual environment
-        cat > deb-package/usr/bin/HwYtVidGrabber << 'EOF'
-        #!/bin/bash
-        # HwYtVidGrabber wrapper script with virtual environment
-        
-        VENV_DIR="/opt/HwYtVidGrabber/venv"
-        
-        # Set Qt6 platform and run the application
-        export QT_QPA_PLATFORM=xcb
-        cd /opt/HwYtVidGrabber
-        exec "$VENV_DIR/bin/python" HwYtVidGrabber.py "$@"
-        EOF
-        chmod +x deb-package/usr/bin/HwYtVidGrabber
+        # Copy icon to pixmaps directory
+        cp artifacts/icon.png deb-package/usr/share/pixmaps/hwytvidgrabber.png
         
         # Create desktop file
         cat > deb-package/usr/share/applications/hwytvidgrabber.desktop << 'EOF'
         [Desktop Entry]
         Name=HwYtVidGrabber
         Comment=YouTube Video Downloader by MalikHw47
-        Exec=HwYtVidGrabber
-        Icon=HwYtVidGrabber
+        Exec=HwYtVidGrabber-Linux
+        Icon=hwytvidgrabber
         Terminal=false
         Type=Application
         Categories=AudioVideo;Network;Video;
@@ -233,55 +275,43 @@ jobs:
         MimeType=text/uri-list;x-scheme-handler/http;x-scheme-handler/https;
         EOF
         
-        # Create control file with minimal dependencies
+        # Create control file - binary package with FFmpeg auto-install
         cat > deb-package/DEBIAN/control << 'EOF'
-        Package: HwYtVidGrabber
+        Package: hwytvidgrabber
         Version: 1.3
         Section: video
         Priority: optional
         Architecture: amd64
-        Depends: python3, qt6-qpa-plugins, libqt6gui6, libqt6widgets6, libqt6core6, python3-venv, python3-pip, libxcb-cursor0, libxcb-cursor-dev, ffmpeg
+        Depends: ffmpeg
         Maintainer: MalikHw47 <help.malicorporation@gmail.com>
         Description: HwYtVidGrabber - YouTube Video Downloader by MalikHw47
-         HwYtVidGrabber is a lightweight PyQt6-based YouTube video downloader 
-         created by MalikHw47 that uses system libraries and virtual environment.
-         This package automatically creates a virtual environment and installs yt-dlp during installation.
+         HwYtVidGrabber is a standalone YouTube video downloader created by MalikHw47.
+         This package includes the pre-compiled binary with all dependencies bundled.
          .
          Features include:
-          - YouTube video downloading with yt-dlp (installed during package setup)
-          - Modern PyQt6 interface (uses system libraries)
+          - YouTube video downloading with built-in yt-dlp
+          - Modern PyQt6 interface (bundled)
           - Multiple format support (MP4, MP3, muted MP4)
           - Resolution selection up to 4K
           - Dark mode support
+          - Fully self-contained binary
+         .
+         Automatically installs FFmpeg as a dependency for video processing.
         Homepage: https://github.com/MalikHw47/HwYtVidGrabber
         EOF
         
-        # Create postinst script to create venv and install yt-dlp
+        # Create postinst script to update desktop database
         cat > deb-package/DEBIAN/postinst << 'EOF'
         #!/bin/bash
         set -e
-        
-        VENV_DIR="/opt/HwYtVidGrabber/venv"
-        
-        echo "Creating HwYtVidGrabber virtual environment..."
-        
-        # Create virtual environment in /opt/HwYtVidGrabber/venv
-        python3 -m venv "$VENV_DIR"
-        
-        # Install yt-dlp in the virtual environment 
-        "$VENV_DIR/bin/pip" install --upgrade pip
-        "$VENV_DIR/bin/pip" install yt-dlp pyqt6
-        
-        # Make sure venv directory has proper permissions
-        chown -R root:root "$VENV_DIR"
-        chmod -R 755 "$VENV_DIR"
         
         # Update desktop database
         if [ -x /usr/bin/update-desktop-database ]; then
             /usr/bin/update-desktop-database /usr/share/applications
         fi
         
-        echo "HwYtVidGrabber installed successfully with virtual environment!"
+        echo "HwYtVidGrabber installed successfully!"
+        echo "FFmpeg has been automatically installed as a dependency."
         
         exit 0
         EOF
@@ -300,12 +330,12 @@ jobs:
         
         # Create changelog
         cat > deb-package/usr/share/doc/HwYtVidGrabber/changelog << 'EOF'
-        HwYtVidGrabber (1.3) unstable; urgency=medium
+        hwytvidgrabber (1.3) unstable; urgency=medium
 
-          * HwYtVidGrabber v1.3 by MalikHw47 - Virtual environment package
-          * Uses system Qt6 packages and creates isolated virtual environment during installation
-          * Only contains Python source file for minimal size
-          * Automatically creates venv and installs yt-dlp during package installation
+          * HwYtVidGrabber v1.3 by MalikHw47 - Binary package
+          * Self-contained binary with all dependencies bundled
+          * Automatically installs FFmpeg dependency
+          * No virtual environment needed - everything is pre-compiled
 
          -- MalikHw47 <help.malicorporation@gmail.com>  $(date -R)
         EOF
@@ -428,24 +458,38 @@ jobs:
           windows-exe/HwYtVidGrabber-win.exe
           macos-dmg/HwYtVidGrabber-Darwin.dmg
           linux-binary/HwYtVidGrabber-Linux
+          linux-binary/hwytvidgrabber.desktop
+          linux-binary/icon.png
           linux-deb/HwYtVidGrabber-debian.deb
           pypi-packages/*.whl
           pypi-packages/*.tar.gz
-          hwytvidgrabber.desktop
-          icon.png
         draft: false
         prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   update-aur:
-    needs: create-release
+    needs: [create-release, build-linux-binary]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     
     steps:
     - uses: actions/checkout@v4
     
+    - name: Extract clean version
+      id: get_version
+      run: |
+        # Extract version from tag and clean it for AUR
+        RAW_VERSION=${GITHUB_REF#refs/tags/}
+        # Remove 'v' prefix if present
+        CLEAN_VERSION=${RAW_VERSION#v}
+        # Replace any invalid characters for pkgver (no hyphens, colons, slashes, whitespace)
+        CLEAN_VERSION=$(echo "$CLEAN_VERSION" | sed 's/[-:]/_/g' | sed 's/[[:space:]]//g' | sed 's/\//_/g')
+        echo "version=$CLEAN_VERSION" >> $GITHUB_OUTPUT
+        echo "raw_version=$RAW_VERSION" >> $GITHUB_OUTPUT
+        echo "Clean version for AUR: $CLEAN_VERSION"
+        echo "Raw version for URLs: $RAW_VERSION"
+
     - name: Setup SSH for AUR
       run: |
         mkdir -p ~/.ssh
@@ -459,27 +503,33 @@ jobs:
           IdentityFile ~/.ssh/aur
         EOF
 
-    - name: Install makepkg dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y pacman-package-manager
-
     - name: Clone AUR repository
       run: |
         git clone ssh://aur@aur.archlinux.org/hwytvidgrabber-bin.git aur-repo
 
-    - name: Update AUR package
+    - name: Update AUR package with correct SHA256 hashes
       run: |
         cd aur-repo
         
-        # Get version from release tag
-        VERSION=$(echo $GITHUB_REF | sed 's/refs\/tags\/v//')
+        # Get versions
+        CLEAN_VERSION="${{ steps.get_version.outputs.version }}"
+        RAW_VERSION="${{ steps.get_version.outputs.raw_version }}"
         
-        # Update PKGBUILD
+        # Get the actual SHA256 hashes from the build job outputs
+        BINARY_SHA256="${{ needs.build-linux-binary.outputs.linux-binary-sha256 }}"
+        DESKTOP_SHA256="${{ needs.build-linux-binary.outputs.desktop-file-sha256 }}"
+        ICON_SHA256="${{ needs.build-linux-binary.outputs.icon-sha256 }}"
+        
+        echo "Using SHA256 hashes:"
+        echo "Binary: $BINARY_SHA256"
+        echo "Desktop: $DESKTOP_SHA256" 
+        echo "Icon: $ICON_SHA256"
+        
+        # Update PKGBUILD with correct hashes
         cat > PKGBUILD << EOF
         # Maintainer: MalikHw47 <help.malicorporation@gmail.com>
         pkgname=hwytvidgrabber-bin
-        pkgver=${VERSION}
+        pkgver=${CLEAN_VERSION}
         pkgrel=1
         pkgdesc="A smol YouTube video downloader by MalikHw47 (Lightweight af)"
         arch=('x86_64')
@@ -488,27 +538,54 @@ jobs:
         depends=('ffmpeg')
         provides=('hwytvidgrabber')
         conflicts=('hwytvidgrabber')
-        source=("\${pkgname}-\${pkgver}::\${url}/releases/download/v\${pkgver}/HwYtVidGrabber-Linux"
-                "\${pkgname}-\${pkgver}.desktop::\${url}/releases/download/v\${pkgver}/hwytvidgrabber.desktop"
-                "\${pkgname}-\${pkgver}.png::\${url}/releases/download/v\${pkgver}/icon.png")
-        sha256sums=('SKIP'
-                    'SKIP'
-                    'SKIP')
+        source=("HwYtVidGrabber-Linux-\${pkgver}::\${url}/releases/download/${RAW_VERSION}/HwYtVidGrabber-Linux"
+                "hwytvidgrabber.desktop::\${url}/releases/download/${RAW_VERSION}/hwytvidgrabber.desktop"
+                "hwytvidgrabber.png::\${url}/releases/download/${RAW_VERSION}/icon.png")
+        sha256sums=('${BINARY_SHA256}'
+                    '${DESKTOP_SHA256}'
+                    '${ICON_SHA256}')
+        noextract=('HwYtVidGrabber-Linux-\${pkgver}')
 
         package() {
             # Install the binary
-            install -Dm755 "\${srcdir}/\${pkgname}-\${pkgver}" "\${pkgdir}/usr/bin/HwYtVidGrabber"
+            install -Dm755 "\${srcdir}/HwYtVidGrabber-Linux-\${pkgver}" "\${pkgdir}/usr/bin/HwYtVidGrabber"
             
             # Install desktop file
-            install -Dm644 "\${srcdir}/\${pkgname}-\${pkgver}.desktop" "\${pkgdir}/usr/share/applications/hwytvidgrabber.desktop"
+            install -Dm644 "\${srcdir}/hwytvidgrabber.desktop" "\${pkgdir}/usr/share/applications/hwytvidgrabber.desktop"
             
             # Install icon
-            install -Dm644 "\${srcdir}/\${pkgname}-\${pkgver}.png" "\${pkgdir}/usr/share/pixmaps/hwytvidgrabber.png"
+            install -Dm644 "\${srcdir}/hwytvidgrabber.png" "\${pkgdir}/usr/share/pixmaps/hwytvidgrabber.png"
         }
         EOF
         
-        # Generate .SRCINFO using makepkg
-        makepkg --printsrcinfo > .SRCINFO
+        # Generate .SRCINFO
+        # Install makepkg if not available
+        if ! command -v makepkg &> /dev/null; then
+            # Create .SRCINFO manually since makepkg might not be available
+            cat > .SRCINFO << EOF
+        pkgbase = hwytvidgrabber-bin
+        	pkgdesc = A smol YouTube video downloader by MalikHw47 (Lightweight af)
+        	pkgver = ${CLEAN_VERSION}
+        	pkgrel = 1
+        	url = https://github.com/MalikHw47/HwYtVidGrabber
+        	arch = x86_64
+        	license = MIT
+        	depends = ffmpeg
+        	provides = hwytvidgrabber
+        	conflicts = hwytvidgrabber
+        	noextract = HwYtVidGrabber-Linux-${CLEAN_VERSION}
+        	source = HwYtVidGrabber-Linux-${CLEAN_VERSION}::https://github.com/MalikHw47/HwYtVidGrabber/releases/download/${RAW_VERSION}/HwYtVidGrabber-Linux
+        	source = hwytvidgrabber.desktop::https://github.com/MalikHw47/HwYtVidGrabber/releases/download/${RAW_VERSION}/hwytvidgrabber.desktop
+        	source = hwytvidgrabber.png::https://github.com/MalikHw47/HwYtVidGrabber/releases/download/${RAW_VERSION}/icon.png
+        	sha256sums = ${BINARY_SHA256}
+        	sha256sums = ${DESKTOP_SHA256}
+        	sha256sums = ${ICON_SHA256}
+
+        pkgname = hwytvidgrabber-bin
+        EOF
+        else
+            makepkg --printsrcinfo > .SRCINFO
+        fi
         
         # Configure Git
         git config user.name "MalikHw47"
@@ -516,5 +593,5 @@ jobs:
         
         # Commit and push changes
         git add PKGBUILD .SRCINFO
-        git commit -m "Update to version ${VERSION}"
+        git commit -m "Update to version ${CLEAN_VERSION}" || echo "No changes to commit"
         git push origin master

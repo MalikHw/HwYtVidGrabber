@@ -233,11 +233,24 @@ jobs:
     
     - name: Create DEB package based on binary
       run: |
-        # Verify required files exist
-        if [ ! -f artifacts/HwYtVidGrabber-Linux ]; then
-            echo "Error: HwYtVidGrabber-Linux binary not found!"
-            exit 1
+        # List downloaded artifacts for debugging
+        echo "Downloaded artifacts:"
+        ls -la artifacts/
+        
+        # Verify required files exist with correct paths
+        if [ ! -f artifacts/dist/HwYtVidGrabber-Linux ]; then
+            echo "Error: HwYtVidGrabber-Linux binary not found in artifacts/dist/!"
+            if [ -f artifacts/HwYtVidGrabber-Linux ]; then
+                echo "Found binary in artifacts/ root, using that path"
+                BINARY_PATH="artifacts/HwYtVidGrabber-Linux"
+            else
+                echo "Binary not found in either location!"
+                exit 1
+            fi
+        else
+            BINARY_PATH="artifacts/dist/HwYtVidGrabber-Linux"
         fi
+        
         if [ ! -f artifacts/icon.png ]; then
             echo "Error: icon.png not found!"
             exit 1
@@ -251,7 +264,7 @@ jobs:
         mkdir -p deb-package/usr/share/doc/HwYtVidGrabber
         
         # Copy the binary and make it executable
-        cp artifacts/HwYtVidGrabber-Linux deb-package/usr/bin/HwYtVidGrabber-Linux
+        cp "$BINARY_PATH" deb-package/usr/bin/HwYtVidGrabber-Linux
         chmod +x deb-package/usr/bin/HwYtVidGrabber-Linux
         
         # Create symlink for easier access
@@ -351,98 +364,8 @@ jobs:
         name: linux-deb
         path: HwYtVidGrabber-debian.deb
 
-  build-pypi:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-    
-    - name: Extract version from tag
-      id: get_version
-      run: |
-        if [[ $GITHUB_REF == refs/tags/* ]]; then
-          # Remove 'refs/tags/' prefix and any 'v' prefix
-          VERSION=${GITHUB_REF#refs/tags/}
-          VERSION=${VERSION#v}  # Remove leading 'v' if present
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-        else
-          echo "version=1.4.2" >> $GITHUB_OUTPUT
-        fi
-    
-    - name: Setup PyPI package structure
-      run: |
-        # Copy existing PyPI setup files
-        cp -r PyPI/* .
-        
-        VERSION="${{ steps.get_version.outputs.version }}"
-        echo "Updating to version: $VERSION"
-        
-        # Update version in setup.py (handle multiple formats)
-        if [ -f setup.py ]; then
-          echo "Updating setup.py..."
-          # Try different version patterns
-          sed -i "s/version=['\"][^'\"]*['\"]/version=\"$VERSION\"/g" setup.py || true
-          sed -i "s/version = ['\"][^'\"]*['\"]/version = \"$VERSION\"/g" setup.py || true
-          sed -i "s/version=['\"][0-9\.]*['\"]/version=\"$VERSION\"/g" setup.py || true
-          # Show what we updated
-          grep -n "version" setup.py || echo "No version found in setup.py"
-        fi
-        
-        # Update version in pyproject.toml if it exists
-        if [ -f pyproject.toml ]; then
-          echo "Updating pyproject.toml..."
-          # Try different version patterns for TOML
-          sed -i "s/version = ['\"][^'\"]*['\"]/version = \"$VERSION\"/g" pyproject.toml || true
-          sed -i "s/version=['\"][^'\"]*['\"]/version=\"$VERSION\"/g" pyproject.toml || true
-          sed -i "s/version = ['\"][0-9\.]*['\"]/version = \"$VERSION\"/g" pyproject.toml || true
-          # Show what we updated
-          grep -n "version" pyproject.toml || echo "No version found in pyproject.toml"
-        fi
-        
-        # Show current directory contents
-        echo "Files in current directory:"
-        ls -la
-        
-        # Ensure main Python file and icons are available for packaging
-        if [ ! -f HwYtVidGrabber.py ]; then
-            echo "Error: HwYtVidGrabber.py not found!"
-            exit 1
-        fi
-        
-        # Copy icons if they exist
-        cp icon.png . 2>/dev/null || echo "icon.png not found, skipping"
-        cp icon.ico . 2>/dev/null || echo "icon.ico not found, skipping"
-    
-    - name: Install build dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install build twine wheel setuptools
-    
-    - name: Build PyPI packages
-      run: |
-        python -m build
-        ls -la dist/
-    
-    - name: Upload PyPI artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: pypi-packages
-        path: dist/*
-    
-    - name: Publish to PyPI
-      if: startsWith(github.ref, 'refs/tags/')
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-      run: |
-        python -m twine upload dist/* --verbose
-
   create-release:
-    needs: [build-windows, build-macos, build-linux-binary, build-linux-packages, build-pypi]
+    needs: [build-windows, build-macos, build-linux-binary, build-linux-packages]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
@@ -461,8 +384,6 @@ jobs:
           linux-binary/hwytvidgrabber.desktop
           linux-binary/icon.png
           linux-deb/HwYtVidGrabber-debian.deb
-          pypi-packages/*.whl
-          pypi-packages/*.tar.gz
         draft: false
         prerelease: false
       env:

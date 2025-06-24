@@ -488,7 +488,7 @@ jobs:
         	pkgdesc = A smol YouTube video downloader by MalikHw47 (Lightweight af)
         	pkgver = ${CLEAN_VERSION}
         	pkgrel = 1
-        	url = https://github.com/MalikHw47/HwYtVidGrabber
+        	url = https://github.com/MalikHw/HwYtVidGrabber
         	arch = x86_64
         	license = MIT
         	depends = ffmpeg

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=HwYtVidGrabber
+Comment=a smol app to downloa Youtube videos with resolutions support (Lightweight)
+Exec=hwytvidgrabber
+Icon=hwytvidgrabber
+Terminal=false
+Type=Application
+Categories=AudioVideo;Network;
+StartupWMClass=HwYtVidGrabber
+Keywords=youtube;download;video;audio;yt-dlp;

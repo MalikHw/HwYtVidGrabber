@@ -185,22 +185,6 @@ jobs:
         --name=HwYtVidGrabber-Linux \
         HwYtVidGrabber.py
     
-    - name: Generate desktop file
-      run: |
-        cat > hwytvidgrabber.desktop << 'EOF'
-        [Desktop Entry]
-        Name=HwYtVidGrabber
-        Comment=YouTube Video Downloader by MalikHw47
-        Exec=HwYtVidGrabber-Linux
-        Icon=hwytvidgrabber
-        Terminal=false
-        Type=Application
-        Categories=AudioVideo;Network;Video;
-        StartupWMClass=HwYtVidGrabber
-        Keywords=youtube;video;download;grabber;
-        MimeType=text/uri-list;x-scheme-handler/http;x-scheme-handler/https;
-        EOF
-    
     - name: Calculate SHA256 hashes
       id: hash
       run: |
@@ -298,16 +282,23 @@ jobs:
           exit 1
         fi
         
-        if [ -f artifacts/linux-binary/hwytvidgrabber.desktop ]; then
+        # Copy desktop file from repo root (not generated one)
+        if [ -f hwytvidgrabber.desktop ]; then
+          cp hwytvidgrabber.desktop release-files/
+          echo "✓ Desktop file copied from repo root"
+        elif [ -f artifacts/linux-binary/hwytvidgrabber.desktop ]; then
           cp artifacts/linux-binary/hwytvidgrabber.desktop release-files/
-          echo "✓ Desktop file found and copied"
+          echo "✓ Desktop file found in artifacts and copied"
         else
           echo "✗ Desktop file not found"
         fi
         
-        if [ -f artifacts/linux-binary/icon.png ]; then
+        if [ -f icon.png ]; then
+          cp icon.png release-files/
+          echo "✓ Icon copied from repo root"
+        elif [ -f artifacts/linux-binary/icon.png ]; then
           cp artifacts/linux-binary/icon.png release-files/
-          echo "✓ Icon found and copied"
+          echo "✓ Icon found in artifacts and copied"
         else
           echo "✗ Icon not found"
         fi
@@ -381,7 +372,7 @@ jobs:
         echo "Desktop: $DESKTOP_SHA256" 
         echo "Icon: $ICON_SHA256"
         
-        # Update PKGBUILD with correct hashes
+        # Update PKGBUILD with correct hashes and proper installation
         cat > PKGBUILD << EOF
         # Maintainer: MalikHw47 <help.malicorporation@gmail.com>
         pkgname=hwytvidgrabber-bin
@@ -391,34 +382,37 @@ jobs:
         arch=('x86_64')
         url="https://github.com/MalikHw/HwYtVidGrabber"
         license=('MIT')
-        depends=('ffmpeg')
+        depends=('ffmpeg' 'qt6-base')
         provides=('hwytvidgrabber')
         conflicts=('hwytvidgrabber')
-        source=("HwYtVidGrabber-Linux-\${pkgver}::\${url}/releases/latest/download/HwYtVidGrabber-Linux"
-                "hwytvidgrabber.desktop::\${url}/releases/latest/download/hwytvidgrabber.desktop"
-                "hwytvidgrabber.png::\${url}/releases/latest/download/icon.png")
+        source=("HwYtVidGrabber-Linux-\${pkgver}::\${url}/releases/download/${RAW_VERSION}/HwYtVidGrabber-Linux"
+                "hwytvidgrabber.desktop::\${url}/releases/download/${RAW_VERSION}/hwytvidgrabber.desktop"
+                "hwytvidgrabber.png::\${url}/releases/download/${RAW_VERSION}/icon.png")
         sha256sums=('${BINARY_SHA256}'
                     '${DESKTOP_SHA256}'
                     '${ICON_SHA256}')
         noextract=('HwYtVidGrabber-Linux-\${pkgver}')
 
         package() {
-            # Install the binary
-            install -Dm755 "\${srcdir}/HwYtVidGrabber-Linux-\${pkgver}" "\${pkgdir}/usr/bin/HwYtVidGrabber"
+            # Install the binary with executable permissions
+            install -Dm755 "\${srcdir}/HwYtVidGrabber-Linux-\${pkgver}" "\${pkgdir}/usr/bin/hwytvidgrabber"
+            
+            # Create a symlink for the original name too
+            ln -sf hwytvidgrabber "\${pkgdir}/usr/bin/HwYtVidGrabber"
             
             # Install desktop file
             install -Dm644 "\${srcdir}/hwytvidgrabber.desktop" "\${pkgdir}/usr/share/applications/hwytvidgrabber.desktop"
             
             # Install icon
             install -Dm644 "\${srcdir}/hwytvidgrabber.png" "\${pkgdir}/usr/share/pixmaps/hwytvidgrabber.png"
+            
+            # Also install icon in hicolor theme for better integration
+            install -Dm644 "\${srcdir}/hwytvidgrabber.png" "\${pkgdir}/usr/share/icons/hicolor/256x256/apps/hwytvidgrabber.png"
         }
         EOF
         
-        # Generate .SRCINFO
-        # Install makepkg if not available
-        if ! command -v makepkg &> /dev/null; then
-            # Create .SRCINFO manually since makepkg might not be available
-            cat > .SRCINFO << EOF
+        # Generate .SRCINFO manually for better control
+        cat > .SRCINFO << EOF
         pkgbase = hwytvidgrabber-bin
         	pkgdesc = A smol YouTube video downloader by MalikHw47 (Lightweight af)
         	pkgver = ${CLEAN_VERSION}
@@ -427,21 +421,19 @@ jobs:
         	arch = x86_64
         	license = MIT
         	depends = ffmpeg
+        	depends = qt6-base
         	provides = hwytvidgrabber
         	conflicts = hwytvidgrabber
         	noextract = HwYtVidGrabber-Linux-${CLEAN_VERSION}
-        	source = HwYtVidGrabber-Linux-${CLEAN_VERSION}::https://github.com/MalikHw/HwYtVidGrabber/releases/latest/download/HwYtVidGrabber-Linux
-        	source = hwytvidgrabber.desktop::https://github.com/MalikHw/HwYtVidGrabber/releases/latest/download/hwytvidgrabber.desktop
-        	source = hwytvidgrabber.png::https://github.com/MalikHw/HwYtVidGrabber/releases/latest/download/icon.png
+        	source = HwYtVidGrabber-Linux-${CLEAN_VERSION}::https://github.com/MalikHw/HwYtVidGrabber/releases/download/${RAW_VERSION}/HwYtVidGrabber-Linux
+        	source = hwytvidgrabber.desktop::https://github.com/MalikHw/HwYtVidGrabber/releases/download/${RAW_VERSION}/hwytvidgrabber.desktop
+        	source = hwytvidgrabber.png::https://github.com/MalikHw/HwYtVidGrabber/releases/download/${RAW_VERSION}/icon.png
         	sha256sums = ${BINARY_SHA256}
         	sha256sums = ${DESKTOP_SHA256}
         	sha256sums = ${ICON_SHA256}
 
         pkgname = hwytvidgrabber-bin
         EOF
-        else
-            makepkg --printsrcinfo > .SRCINFO
-        fi
         
         # Configure Git
         git config user.name "MalikHw47"
@@ -449,5 +441,5 @@ jobs:
         
         # Commit and push changes
         git add PKGBUILD .SRCINFO
-        git commit -m "Update to version ${CLEAN_VERSION}" || echo "No changes to commit"
+        git commit -m "Update to version ${CLEAN_VERSION} - Fixed binary installation and desktop integration" || echo "No changes to commit"
         git push origin master

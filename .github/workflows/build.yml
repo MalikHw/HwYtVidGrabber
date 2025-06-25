@@ -261,20 +261,31 @@ jobs:
         
         # List downloaded artifacts for debugging
         echo "Downloaded artifacts:"
-        ls -la artifacts/
+        find artifacts/ -type f -ls
         
-        # Find the binary (it should be in artifacts/ directly now due to artifact structure)
-        if [ -f artifacts/HwYtVidGrabber-Linux ]; then
+        # The artifact download now puts files directly in artifacts/ directory
+        # Check for the binary in the correct location
+        if [ -f "artifacts/HwYtVidGrabber-Linux" ]; then
             BINARY_PATH="artifacts/HwYtVidGrabber-Linux"
             echo "Found binary at: $BINARY_PATH"
         else
             echo "Error: HwYtVidGrabber-Linux binary not found!"
-            find artifacts/ -name "*HwYtVidGrabber-Linux*" -type f
+            echo "Available files:"
+            find artifacts/ -type f
             exit 1
         fi
         
-        if [ ! -f artifacts/icon.png ]; then
+        if [ ! -f "artifacts/icon.png" ]; then
             echo "Error: icon.png not found!"
+            echo "Available files:"
+            find artifacts/ -type f
+            exit 1
+        fi
+        
+        if [ ! -f "artifacts/hwytvidgrabber.desktop" ]; then
+            echo "Error: hwytvidgrabber.desktop not found!"
+            echo "Available files:"
+            find artifacts/ -type f
             exit 1
         fi
         
@@ -295,20 +306,8 @@ jobs:
         # Copy icon to pixmaps directory
         cp artifacts/icon.png deb-package/usr/share/pixmaps/hwytvidgrabber.png
         
-        # Create desktop file
-        cat > deb-package/usr/share/applications/hwytvidgrabber.desktop << 'EOF'
-        [Desktop Entry]
-        Name=HwYtVidGrabber
-        Comment=A smol YouTube video downloader by MalikHw47 (Lightweight af)
-        Exec=HwYtVidGrabber-Linux
-        Icon=hwytvidgrabber
-        Terminal=false
-        Type=Application
-        Categories=AudioVideo;Network;Video;
-        StartupWMClass=HwYtVidGrabber
-        Keywords=youtube;video;download;grabber;
-        MimeType=text/uri-list;x-scheme-handler/http;x-scheme-handler/https;
-        EOF
+        # Copy desktop file
+        cp artifacts/hwytvidgrabber.desktop deb-package/usr/share/applications/
         
         # Create control file with dynamic version
         cat > deb-package/DEBIAN/control << EOF

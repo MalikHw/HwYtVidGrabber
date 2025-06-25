@@ -382,7 +382,7 @@ jobs:
         arch=('x86_64')
         url="https://github.com/MalikHw/HwYtVidGrabber"
         license=('MIT')
-        depends=('ffmpeg' 'qt6-base')
+        depends=('ffmpeg')
         provides=('hwytvidgrabber')
         conflicts=('hwytvidgrabber')
         source=("HwYtVidGrabber-Linux-\${pkgver}::\${url}/releases/download/${RAW_VERSION}/HwYtVidGrabber-Linux"
@@ -421,7 +421,6 @@ jobs:
         	arch = x86_64
         	license = MIT
         	depends = ffmpeg
-        	depends = qt6-base
         	provides = hwytvidgrabber
         	conflicts = hwytvidgrabber
         	noextract = HwYtVidGrabber-Linux-${CLEAN_VERSION}

@@ -266,14 +266,36 @@ jobs:
           echo "✗ macOS dmg not found"
         fi
         
-        # Fixed path for Linux binary - it's in the dist/ subdirectory
+        # Check multiple possible paths for Linux binary
+        LINUX_BINARY_FOUND=false
+        
+        # Try direct path first
         if [ -f artifacts/linux-binary/HwYtVidGrabber-Linux ]; then
           cp artifacts/linux-binary/HwYtVidGrabber-Linux release-files/
-          echo "✓ Linux binary found and copied"
+          echo "✓ Linux binary found at direct path and copied"
+          LINUX_BINARY_FOUND=true
+        # Try dist subdirectory
+        elif [ -f artifacts/linux-binary/dist/HwYtVidGrabber-Linux ]; then
+          cp artifacts/linux-binary/dist/HwYtVidGrabber-Linux release-files/
+          echo "✓ Linux binary found in dist/ and copied"
+          LINUX_BINARY_FOUND=true
         else
-          echo "✗ Linux binary not found"
+          echo "✗ Linux binary not found in expected locations"
           echo "Searching for Linux binary files:"
           find artifacts/ -name "*HwYtVidGrabber-Linux*" -type f
+          
+          # Try to find it anywhere and copy it
+          LINUX_BINARY_PATH=$(find artifacts/ -name "HwYtVidGrabber-Linux" -type f | head -1)
+          if [ -n "$LINUX_BINARY_PATH" ]; then
+            cp "$LINUX_BINARY_PATH" release-files/
+            echo "✓ Linux binary found at $LINUX_BINARY_PATH and copied"
+            LINUX_BINARY_FOUND=true
+          fi
+        fi
+        
+        if [ "$LINUX_BINARY_FOUND" = false ]; then
+          echo "✗ CRITICAL: Linux binary not found anywhere!"
+          exit 1
         fi
         
         if [ -f artifacts/linux-binary/hwytvidgrabber.desktop ]; then

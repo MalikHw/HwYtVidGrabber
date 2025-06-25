@@ -447,22 +447,6 @@ jobs:
         files: release-files/*
         draft: false
         prerelease: false
-        body: |
-          ## HwYtVidGrabber Release ${{ github.ref_name }}
-          
-          ### Downloads:
-          - **Windows**: `HwYtVidGrabber-win.exe` - Self-contained executable
-          - **macOS**: `HwYtVidGrabber-Darwin.dmg` - DMG installer
-          - **Linux Binary**: `HwYtVidGrabber-Linux` - Standalone executable
-          - **Linux DEB**: `HwYtVidGrabber-*.deb` - Debian package with automatic FFmpeg installation
-          - **Desktop File**: `hwytvidgrabber.desktop` - For manual Linux installations
-          - **Icon**: `icon.png` - Application icon
-          
-          ### Installation:
-          - **Windows/macOS**: Download and run the appropriate file
-          - **Linux**: Use the DEB package for automatic installation, or download the binary and desktop file for manual setup
-          
-          All builds are self-contained and include all necessary dependencies.
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -231,8 +231,6 @@ jobs:
           hwytvidgrabber.desktop
           icon.png
 
-
-
   create-release:
     needs: [build-windows, build-macos, build-linux-binary]
     runs-on: ubuntu-latest
@@ -268,11 +266,13 @@ jobs:
           echo "✗ macOS dmg not found"
         fi
         
+        # Fixed path for Linux binary - it's in the dist/ subdirectory
         if [ -f artifacts/linux-binary/HwYtVidGrabber-Linux ]; then
           cp artifacts/linux-binary/HwYtVidGrabber-Linux release-files/
           echo "✓ Linux binary found and copied"
         else
           echo "✗ Linux binary not found"
+          echo "Searching for Linux binary files:"
           find artifacts/ -name "*HwYtVidGrabber-Linux*" -type f
         fi
         
@@ -289,9 +289,6 @@ jobs:
         else
           echo "✗ Icon not found"
         fi
-        
-        # Copy all DEB files
-        find artifacts/linux-deb/ -name "*.deb" -exec cp {} release-files/ \;
         
         echo "Final release files:"
         ls -la release-files/

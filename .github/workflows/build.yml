@@ -385,9 +385,9 @@ jobs:
         depends=('ffmpeg')
         provides=('hwytvidgrabber')
         conflicts=('hwytvidgrabber')
-        source=("HwYtVidGrabber-Linux-\${pkgver}::\${url}/releases/download/${RAW_VERSION}/HwYtVidGrabber-Linux"
-                "hwytvidgrabber.desktop::\${url}/releases/download/${RAW_VERSION}/hwytvidgrabber.desktop"
-                "hwytvidgrabber.png::\${url}/releases/download/${RAW_VERSION}/icon.png")
+        source=("HwYtVidGrabber-Linux-\${pkgver}::\${url}/releases/latest/download/HwYtVidGrabber-Linux"
+                "hwytvidgrabber.desktop::\${url}/releases/latest/download/hwytvidgrabber.desktop"
+                "hwytvidgrabber.png::\${url}/releases/latest/download/icon.png")
         sha256sums=('${BINARY_SHA256}'
                     '${DESKTOP_SHA256}'
                     '${ICON_SHA256}')
@@ -424,9 +424,9 @@ jobs:
         	provides = hwytvidgrabber
         	conflicts = hwytvidgrabber
         	noextract = HwYtVidGrabber-Linux-${CLEAN_VERSION}
-        	source = HwYtVidGrabber-Linux-${CLEAN_VERSION}::https://github.com/MalikHw/HwYtVidGrabber/releases/download/${RAW_VERSION}/HwYtVidGrabber-Linux
-        	source = hwytvidgrabber.desktop::https://github.com/MalikHw/HwYtVidGrabber/releases/download/${RAW_VERSION}/hwytvidgrabber.desktop
-        	source = hwytvidgrabber.png::https://github.com/MalikHw/HwYtVidGrabber/releases/download/${RAW_VERSION}/icon.png
+        	source = HwYtVidGrabber-Linux-${CLEAN_VERSION}::https://github.com/MalikHw/HwYtVidGrabber/releases/latest/download/HwYtVidGrabber-Linux
+        	source = hwytvidgrabber.desktop::https://github.com/MalikHw/HwYtVidGrabber/releases/latest/download/hwytvidgrabber.desktop
+        	source = hwytvidgrabber.png::https://github.com/MalikHw/HwYtVidGrabber/releases/latest/download/icon.png
         	sha256sums = ${BINARY_SHA256}
         	sha256sums = ${DESKTOP_SHA256}
         	sha256sums = ${ICON_SHA256}

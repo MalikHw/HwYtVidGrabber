@@ -266,7 +266,7 @@ jobs:
         # The artifact download now puts files directly in artifacts/ directory
         # Check for the binary in the correct location
         if [ -f "artifacts/HwYtVidGrabber-Linux" ]; then
-            BINARY_PATH="artifacts/HwYtVidGrabber-Linux"
+            BINARY_PATH="artifacts/dist/HwYtVidGrabber-Linux"
             echo "Found binary at: $BINARY_PATH"
         else
             echo "Error: HwYtVidGrabber-Linux binary not found!"

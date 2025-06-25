@@ -520,9 +520,9 @@ jobs:
         depends=('ffmpeg')
         provides=('hwytvidgrabber')
         conflicts=('hwytvidgrabber')
-        source=("HwYtVidGrabber-Linux-\${pkgver}::\${url}/releases/download/${RAW_VERSION}/HwYtVidGrabber-Linux"
-                "hwytvidgrabber.desktop::\${url}/releases/download/${RAW_VERSION}/hwytvidgrabber.desktop"
-                "hwytvidgrabber.png::\${url}/releases/download/${RAW_VERSION}/icon.png")
+        source=("HwYtVidGrabber-Linux-\${pkgver}::\${url}/releases/latest/download/HwYtVidGrabber-Linux"
+                "hwytvidgrabber.desktop::\${url}/releases/latest/download/hwytvidgrabber.desktop"
+                "hwytvidgrabber.png::\${url}/releases/latest/download/icon.png")
         sha256sums=('${BINARY_SHA256}'
                     '${DESKTOP_SHA256}'
                     '${ICON_SHA256}')
